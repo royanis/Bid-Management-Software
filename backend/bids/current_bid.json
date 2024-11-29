@@ -1,0 +1,39 @@
+{
+    "clientName": "",
+    "opportunityName": "",
+    "timeline": {
+        "rfpIssueDate": "",
+        "qaSubmissionDate": "",
+        "proposalSubmissionDate": ""
+    },
+    "deliverables": [
+        {
+            "label": "Executive Summary",
+            "selected": false
+        },
+        {
+            "label": "Solution PPT",
+            "selected": false
+        },
+        {
+            "label": "Supplier Profile Questions",
+            "selected": false
+        },
+        {
+            "label": "Rate Card",
+            "selected": false
+        },
+        {
+            "label": "Commercial Proposal",
+            "selected": false
+        },
+        {
+            "label": "Resource Profiles",
+            "selected": false
+        },
+        {
+            "label": "MSA",
+            "selected": false
+        }
+    ]
+}
