@@ -1,10 +1,10 @@
 {
-    "clientName": "",
-    "opportunityName": "",
+    "clientName": "NYL",
+    "opportunityName": "FSO Flex RFP",
     "timeline": {
-        "rfpIssueDate": "",
-        "qaSubmissionDate": "",
-        "proposalSubmissionDate": ""
+        "proposalSubmissionDate": "2024-12-06",
+        "qaSubmissionDate": "2024-12-02",
+        "rfpIssueDate": "2024-11-29"
     },
     "deliverables": [
         {
@@ -17,7 +17,7 @@
         },
         {
             "label": "Supplier Profile Questions",
-            "selected": false
+            "selected": true
         },
         {
             "label": "Rate Card",
@@ -29,7 +29,7 @@
         },
         {
             "label": "Resource Profiles",
-            "selected": false
+            "selected": true
         },
         {
             "label": "MSA",
