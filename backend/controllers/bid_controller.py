@@ -98,3 +98,16 @@ def get_bid(bid_name):
         return {'success': False, 'message': 'Bid not found', 'status': 404}
     except Exception as e:
         return {'success': False, 'message': f"Error retrieving bid: {str(e)}", 'status': 500}
+    
+# Fetch activities for a deliverable
+def get_activities(bid_name, deliverable_name):
+    # Fetch activities from database or mock data for now
+    return [
+        {"activityName": "Draft Proposal", "owner": "John Doe", "startDate": "2024-12-01", "endDate": "2024-12-02"},
+        {"activityName": "Review Draft", "owner": "Jane Doe", "startDate": "2024-12-03", "endDate": "2024-12-04"},
+    ]
+
+# Save activities for a deliverable
+def save_activities(bid_name, deliverable_name, activities):
+    # Save the activities to database or mock saving logic for now
+    print(f"Saving activities for {deliverable_name} in bid {bid_name}: {activities}")

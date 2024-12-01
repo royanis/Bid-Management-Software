@@ -1,0 +1,71 @@
+{
+    "activities": {
+        "Solution PPT": [
+            {
+                "end_date": "2024-12-05",
+                "id": 1,
+                "name": "Test",
+                "owner": "Roy",
+                "start_date": "2024-12-02"
+            }
+        ]
+    },
+    "bidId": "NYL_FSO_Version 1",
+    "clientName": "NYL",
+    "deliverables": [
+        "Solution PPT",
+        "Resource Profiles"
+    ],
+    "opportunityName": "FSO",
+    "team": {
+        "core": [
+            {
+                "name": "Roy",
+                "role": "Deal Lead"
+            },
+            {
+                "name": "",
+                "role": "Deal Shaper"
+            },
+            {
+                "name": "",
+                "role": "Deal Coach"
+            },
+            {
+                "name": "",
+                "role": "Deal Capture"
+            },
+            {
+                "name": "",
+                "role": "Deal Negotiator"
+            }
+        ],
+        "solution": [
+            {
+                "name": "",
+                "role": "Solution Architect"
+            },
+            {
+                "name": "",
+                "role": "Technical Writer"
+            },
+            {
+                "name": "",
+                "role": "QA Reviewer"
+            },
+            {
+                "name": "",
+                "role": "Pricing Expert"
+            },
+            {
+                "name": "",
+                "role": "Orals Coach"
+            }
+        ]
+    },
+    "timeline": {
+        "proposalSubmissionDate": "2024-12-12",
+        "qaSubmissionDate": "2024-12-05",
+        "rfpIssueDate": "2024-12-01"
+    }
+}

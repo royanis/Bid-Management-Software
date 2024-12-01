@@ -1,0 +1,60 @@
+{
+    "clientName": "NYL",
+    "opportunityName": "Test",
+    "timeline": {
+        "proposalSubmissionDate": "2024-12-19",
+        "qaSubmissionDate": "2024-12-10",
+        "rfpIssueDate": "2024-12-03"
+    },
+    "deliverables": [
+        "Solution PPT",
+        "Supplier Profile Questions"
+    ],
+    "bidId": "NYL_Test_Version 2",
+    "team": {
+        "core": [
+            {
+                "role": "Deal Lead",
+                "name": ""
+            },
+            {
+                "role": "Deal Shaper",
+                "name": ""
+            },
+            {
+                "role": "Deal Coach",
+                "name": ""
+            },
+            {
+                "role": "Deal Capture",
+                "name": ""
+            },
+            {
+                "role": "Deal Negotiator",
+                "name": ""
+            }
+        ],
+        "solution": [
+            {
+                "role": "Solution Architect",
+                "name": ""
+            },
+            {
+                "role": "Technical Writer",
+                "name": ""
+            },
+            {
+                "role": "QA Reviewer",
+                "name": ""
+            },
+            {
+                "role": "Pricing Expert",
+                "name": ""
+            },
+            {
+                "role": "Orals Coach",
+                "name": ""
+            }
+        ]
+    }
+}

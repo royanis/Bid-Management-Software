@@ -2,7 +2,9 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 import json
+import re  # For regex-based filename handling
 from datetime import datetime
+import shutil  # For moving files
 
 app = Flask(__name__)
 
@@ -15,6 +17,20 @@ os.makedirs('bids', exist_ok=True)
 # Utility function to get the file path for a bid
 def get_bid_file_path(bid_id="current_bid"):
     return os.path.join('bids', f"{bid_id}.json")
+
+# Utility function to move older versions to archive
+def move_to_archive(bid_id):
+    archive_dir = os.path.join('bids', 'Archive')
+    os.makedirs(archive_dir, exist_ok=True)
+
+    file_path = get_bid_file_path(bid_id)
+    if os.path.exists(file_path):
+        shutil.move(file_path, os.path.join(archive_dir, f"{bid_id}.json"))
+
+# Utility function to extract version number from filename
+def extract_version(filename):
+    match = re.search(r"_Version(\d+)", filename)
+    return int(match.group(1)) if match else 1
 
 # Middleware to log all incoming requests
 @app.before_request
@@ -33,7 +49,7 @@ def add_cors_headers(response):
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
     return response
 
-# Endpoint: Create a new bid
+# Endpoint: Create a new bid with versioning and archiving
 @app.route('/create-bid', methods=['OPTIONS', 'POST'])
 def create_bid():
     if request.method == 'OPTIONS':  # Handle preflight request
@@ -49,22 +65,32 @@ def create_bid():
         # Validate top-level required fields
         for field in required_fields:
             if field not in data or not data[field]:
-                print(f"[ERROR] Missing or empty field: {field}")
                 return jsonify({"success": False, "message": f"Field {field} is missing or empty."}), 400
 
         # Validate nested timeline fields
         for t_field in timeline_fields:
             if t_field not in data['timeline'] or not data['timeline'][t_field]:
-                print(f"[ERROR] Missing or empty timeline field: {t_field}")
                 return jsonify({"success": False, "message": f"Timeline field {t_field} is missing or empty."}), 400
 
         # Validate deliverables
         if not data.get('deliverables') or not any(data['deliverables']):
-            print("[ERROR] No deliverables selected")
             return jsonify({"success": False, "message": "At least one deliverable must be selected."}), 400
 
-        # Generate bid ID and save the data
-        bid_id = f"{data['clientName']}_{data['opportunityName']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Determine the new version number
+        client_opportunity_prefix = f"{data['clientName']}_{data['opportunityName']}"
+        version = 1
+        existing_files = [
+            f for f in os.listdir('bids') if f.startswith(client_opportunity_prefix) and f.endswith('.json')
+        ]
+        if existing_files:
+            existing_versions = [extract_version(f) for f in existing_files]
+            version = max(existing_versions) + 1
+            for file in existing_files:
+                bid_id_to_archive = file.replace('.json', '')
+                move_to_archive(bid_id_to_archive)
+
+        # Save the new bid with the new version number
+        bid_id = f"{client_opportunity_prefix}_Version{version}"
         file_path = get_bid_file_path(bid_id)
         with open(file_path, 'w') as file:
             json.dump(data, file, indent=4)
@@ -74,6 +100,32 @@ def create_bid():
     except Exception as e:
         print(f"[ERROR] {str(e)}")
         return jsonify({"success": False, "message": f"Error creating bid: {str(e)}"}), 500
+
+# Endpoint: Move a file to the Archive folder
+@app.route('/move-to-archive', methods=['OPTIONS', 'POST'])
+def move_to_archive_endpoint():
+    if request.method == 'OPTIONS':  # Handle preflight request
+        return jsonify({}), 200
+
+    try:
+        data = request.json
+        file_name = data.get('fileName')
+
+        if not file_name:
+            return jsonify({"success": False, "message": "File name is required."}), 400
+
+        source_path = os.path.join('bids', f"{file_name}.json")
+        archive_path = os.path.join('bids', 'Archive', f"{file_name}.json")
+
+        if not os.path.exists(source_path):
+            return jsonify({"success": False, "message": "File not found."}), 404
+
+        shutil.move(source_path, archive_path)
+        return jsonify({"success": True, "message": f"File '{file_name}' moved to archive."}), 200
+
+    except Exception as e:
+        print(f"[ERROR] {str(e)}")
+        return jsonify({"success": False, "message": f"Error moving file to archive: {str(e)}"}), 500
 
 # Endpoint: Save bid data
 @app.route('/save-bid-data', methods=['OPTIONS', 'POST'])
@@ -94,6 +146,69 @@ def save_bid_data():
         print(f"[Error] {str(e)}")
         return jsonify({"success": False, "message": f"Error saving bid data: {str(e)}"}), 500
 
+# Endpoint: Fetch bid data
+@app.route('/get-bid-data', methods=['OPTIONS', 'GET'])
+def get_bid_data():
+    if request.method == 'OPTIONS':  # Preflight request
+        return jsonify({}), 200
+
+    try:
+        bid_id = request.args.get('bidId', 'current_bid')  # Default to 'current_bid'
+        file_path = get_bid_file_path(bid_id)
+
+        if not os.path.exists(file_path):
+            return jsonify({"message": "No bid data found.", "data": None}), 404
+
+        with open(file_path, 'r') as file:
+            data = json.load(file)
+        return jsonify({"message": "Bid data fetched successfully.", "data": data}), 200
+    except Exception as e:
+        print(f"[Error] {str(e)}")
+        return jsonify({"success": False, "message": f"Error fetching bid data: {str(e)}"}), 500
+
+# Endpoint: List all files (including archive)
+@app.route('/list-files', methods=['OPTIONS', 'GET'])
+def list_files():
+    if request.method == 'OPTIONS':  # Preflight request
+        return jsonify({}), 200
+
+    try:
+        bids_dir = 'bids'
+        archive_dir = os.path.join(bids_dir, 'Archive')
+        include_archived = request.args.get('archived', 'false').lower() == 'true'
+
+        # Collect files in the active directory
+        active_files = [
+            os.path.join(bids_dir, f) for f in os.listdir(bids_dir) if f.endswith('.json') and f != 'current_bid.json'
+        ]
+
+        # Include archived files if requested
+        archived_files = []
+        if include_archived and os.path.exists(archive_dir):
+            archived_files = [
+                os.path.join(archive_dir, f) for f in os.listdir(archive_dir) if f.endswith('.json')
+            ]
+
+        all_files = active_files + archived_files
+
+        # Prepare the response data
+        file_list = []
+        for file_path in all_files:
+            with open(file_path, 'r') as file:
+                data = json.load(file)
+                file_list.append({
+                    "id": os.path.basename(file_path).replace('.json', ''),
+                    "clientName": data.get('clientName', 'Unknown'),
+                    "opportunityName": data.get('opportunityName', 'Unknown'),
+                    "lastModified": os.path.getmtime(file_path),
+                    "archived": 'Archive' in file_path,
+                })
+
+        return jsonify({"files": file_list}), 200
+    except Exception as e:
+        print(f"[Error] {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 # Endpoint: Delete bid data
 @app.route('/delete-bid-data', methods=['OPTIONS', 'DELETE'])
 def delete_bid_data():
@@ -113,53 +228,29 @@ def delete_bid_data():
         print(f"[Error] {str(e)}")
         return jsonify({"success": False, "message": f"Error deleting bid data: {str(e)}"}), 500
 
-# Endpoint: Fetch bid data
-@app.route('/get-bid-data', methods=['OPTIONS', 'GET'])
-def get_bid_data():
-    if request.method == 'OPTIONS':  # Preflight request
-        return jsonify({}), 200
+# Endpoint: Save activities
+@app.route('/save-activities', methods=['POST'])
+def save_activities():
+    data = request.json
+    deliverable = data.get('deliverable')
+    activities = data.get('activities')
 
-    try:
-        bid_id = request.args.get('bidId', 'current_bid')
-        file_path = get_bid_file_path(bid_id)
+    if not deliverable or not activities:
+        return jsonify({"success": False, "message": "Invalid data"}), 400
 
-        if not os.path.exists(file_path):
-            return jsonify({"message": "No bid data found.", "data": None}), 404
+    bid_id = "current_bid"
+    file_path = get_bid_file_path(bid_id)
 
-        with open(file_path, 'r') as file:
-            data = json.load(file)
-        return jsonify({"message": "Bid data fetched successfully.", "data": data}), 200
-    except Exception as e:
-        print(f"[Error] {str(e)}")
-        return jsonify({"success": False, "message": f"Error fetching bid data: {str(e)}"}), 500
+    with open(file_path, 'r') as file:
+        bid_data = json.load(file)
 
-# Endpoint: List all bids
-@app.route('/list-bid-data', methods=['OPTIONS', 'GET'])
-def list_bid_data():
-    if request.method == 'OPTIONS':  # Preflight request
-        return jsonify({}), 200
+    bid_data['activities'] = bid_data.get('activities', {})
+    bid_data['activities'][deliverable] = activities
 
-    try:
-        bids_dir = 'bids'
-        if not os.path.exists(bids_dir):
-            return jsonify([]), 200
+    with open(file_path, 'w') as file:
+        json.dump(bid_data, file, indent=4)
 
-        bid_files = [f for f in os.listdir(bids_dir) if f.endswith('.json')]
-        bid_list = []
-        for bid_file in bid_files:
-            file_path = os.path.join(bids_dir, bid_file)
-            with open(file_path, 'r') as file:
-                data = json.load(file)
-                bid_list.append({
-                    "id": bid_file.replace('.json', ''),
-                    "clientName": data.get('clientName', 'Unknown'),
-                    "opportunityName": data.get('opportunityName', 'Unknown'),
-                    "lastModified": os.path.getmtime(file_path),
-                })
-        return jsonify(bid_list), 200
-    except Exception as e:
-        print(f"[Error] {str(e)}")
-        return jsonify({"error": str(e)}), 500
+    return jsonify({"success": True, "message": "Activities saved successfully"})
 
 if __name__ == '__main__':
     app.run(debug=True, host="0.0.0.0", port=5000)
