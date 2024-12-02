@@ -82,18 +82,32 @@ def create_bid():
         existing_files = [
             f for f in os.listdir('bids') if f.startswith(client_opportunity_prefix) and f.endswith('.json')
         ]
+        new_bid_data = data  # Start with incoming data as the base
+
         if existing_files:
             existing_versions = [extract_version(f) for f in existing_files]
             version = max(existing_versions) + 1
-            for file in existing_files:
-                bid_id_to_archive = file.replace('.json', '')
-                move_to_archive(bid_id_to_archive)
+
+            # Archive the most recent file
+            latest_file = max(existing_files, key=extract_version)
+            latest_file_path = os.path.join('bids', latest_file)
+            with open(latest_file_path, 'r') as file:
+                archived_data = json.load(file)
+
+            # Update new bid data with all fields from the archived data, retaining existing values
+            new_bid_data = {**archived_data, **data}  # Merge data
+            new_bid_data['timeline'] = data['timeline']  # Overwrite with updated timeline
+            new_bid_data['deliverables'] = data['deliverables']  # Overwrite deliverables
+            new_bid_data['bidId'] = f"{client_opportunity_prefix}_Version{version}"  # Update bid ID
+
+            # Archive the existing file
+            move_to_archive(latest_file.replace('.json', ''))
 
         # Save the new bid with the new version number
         bid_id = f"{client_opportunity_prefix}_Version{version}"
         file_path = get_bid_file_path(bid_id)
         with open(file_path, 'w') as file:
-            json.dump(data, file, indent=4)
+            json.dump(new_bid_data, file, indent=4)
 
         print("[DEBUG] Bid created successfully:", bid_id)
         return jsonify({"success": True, "message": f"Bid created successfully: {bid_id}", "bidId": bid_id}), 201
