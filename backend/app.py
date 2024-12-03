@@ -266,5 +266,74 @@ def save_activities():
 
     return jsonify({"success": True, "message": "Activities saved successfully"})
 
+# Endpoint: Get dashboard data
+@app.route('/api/dashboard', methods=['GET'])
+def get_dashboard_data():
+    try:
+        bid_id = request.args.get('bidId', 'current_bid')
+        file_path = get_bid_file_path(bid_id)
+        print(f"[DEBUG] Received bidId: {bid_id}")
+        print(f"[DEBUG] File path resolved to: {file_path}")
+
+        if not os.path.exists(file_path):
+            return jsonify({"success": False, "message": "Bid data not found.", "data": None}), 404
+
+        with open(file_path, 'r') as file:
+            bid_data = json.load(file)
+
+        # Generate metrics
+        completion_by_track = [
+            {"name": key, "value": sum(activity.get("progress", 0) for activity in activities)}
+            for key, activities in bid_data.get('activities', {}).items()
+        ]
+
+        completion_by_person = {}
+        for activities in bid_data.get('activities', {}).values():
+            for activity in activities:
+                owner = activity.get('owner', 'Unassigned')
+                completion_by_person[owner] = completion_by_person.get(owner, 0) + activity.get('progress', 0)
+
+        upcoming_milestones = [
+            {"name": milestone, "date": bid_data['timeline'].get(milestone)}
+            for milestone in ['rfpIssueDate', 'qaSubmissionDate', 'proposalSubmissionDate']
+            if milestone in bid_data['timeline']
+        ]
+
+        metrics = {
+            "completionByTrack": completion_by_track,
+            "completionByPerson": [{"name": key, "value": value} for key, value in completion_by_person.items()],
+            "upcomingMilestones": upcoming_milestones,
+        }
+
+        # Prepare activities
+        activities = [
+            {"name": activity.get("name"), "owner": activity.get("owner"), "dueDate": activity.get("dueDate")}
+            for activities in bid_data.get('activities', {}).values()
+            for activity in activities
+        ]
+
+        # Prepare action tracker
+        action_tracker = [
+            {
+                "activity": activity.get("name"),
+                "status": activity.get("status"),
+                "actions": activity.get("actions"),
+                "remarks": activity.get("remarks"),
+            }
+            for activities in bid_data.get('activities', {}).values()
+            for activity in activities
+        ]
+
+        return jsonify({
+            "success": True,
+            "metrics": metrics,
+            "activities": activities,
+            "actionTracker": action_tracker,
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] {str(e)}")
+        return jsonify({"success": False, "message": f"Error generating dashboard data: {str(e)}"}), 500
+    
 if __name__ == '__main__':
     app.run(debug=True, host="0.0.0.0", port=5000)

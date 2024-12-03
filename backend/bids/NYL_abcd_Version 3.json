@@ -1,0 +1,102 @@
+{
+    "activities": {
+        "Executive Summary": [
+            {
+                "actions": "Done Yay",
+                "endDate": "2024-12-05",
+                "end_date": "2024-12-05",
+                "id": 1,
+                "name": "Test",
+                "owner": "Roy",
+                "remarks": "",
+                "startDate": "2024-12-02",
+                "start_date": "2024-12-02",
+                "status": "Completed"
+            },
+            {
+                "actions": "WIP",
+                "endDate": "2024-12-06",
+                "end_date": "2024-12-06",
+                "id": 2,
+                "name": "Test 3",
+                "owner": "Naresh",
+                "remarks": "",
+                "startDate": "2024-12-03",
+                "start_date": "2024-12-03",
+                "status": "In Progress"
+            }
+        ],
+        "Solution PPT": [
+            {
+                "actions": "Still to sstart",
+                "endDate": "2024-12-12",
+                "end_date": "2024-12-12",
+                "id": 1,
+                "name": "Test 13",
+                "owner": "Chiku",
+                "remarks": "",
+                "startDate": "2024-12-04",
+                "start_date": "2024-12-04",
+                "status": "Open"
+            }
+        ]
+    },
+    "bidId": "NYL_abcd_Version 3",
+    "clientName": "NYL",
+    "deliverables": [
+        "Executive Summary",
+        "Solution PPT"
+    ],
+    "opportunityName": "abcd",
+    "team": {
+        "core": [
+            {
+                "name": "Roy",
+                "role": "Deal Lead"
+            },
+            {
+                "name": "Naresh",
+                "role": "Deal Shaper"
+            },
+            {
+                "name": "Chiku",
+                "role": "Deal Coach"
+            },
+            {
+                "name": "",
+                "role": "Deal Capture"
+            },
+            {
+                "name": "",
+                "role": "Deal Negotiator"
+            }
+        ],
+        "solution": [
+            {
+                "name": "",
+                "role": "Solution Architect"
+            },
+            {
+                "name": "",
+                "role": "Technical Writer"
+            },
+            {
+                "name": "",
+                "role": "QA Reviewer"
+            },
+            {
+                "name": "",
+                "role": "Pricing Expert"
+            },
+            {
+                "name": "",
+                "role": "Orals Coach"
+            }
+        ]
+    },
+    "timeline": {
+        "proposalSubmissionDate": "2024-12-13",
+        "qaSubmissionDate": "2024-12-05",
+        "rfpIssueDate": "2024-12-02"
+    }
+}
