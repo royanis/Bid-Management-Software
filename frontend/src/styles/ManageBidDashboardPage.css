@@ -1,0 +1,23 @@
+.dashboard-container {
+    background-color: #f5f5f5;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  
+  .metrics-section .ant-card {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  .ant-card {
+    border: none;
+  }
+  
+  .list-item-text {
+    font-size: 14px;
+  }
+  
+  .badge {
+    font-weight: bold;
+  }
