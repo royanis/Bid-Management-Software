@@ -267,6 +267,7 @@ def save_activities():
     return jsonify({"success": True, "message": "Activities saved successfully"})
 
 # Endpoint: Get dashboard data
+# Endpoint: Get dashboard data
 @app.route('/api/dashboard', methods=['GET'])
 def get_dashboard_data():
     try:
@@ -281,59 +282,125 @@ def get_dashboard_data():
         with open(file_path, 'r') as file:
             bid_data = json.load(file)
 
-        # Generate metrics
+        # Total and Completed Activities
+        total_activities = sum(len(activities) for activities in bid_data.get("activities", {}).values())
+        completed_activities = sum(
+            sum(1 for activity in activities if activity.get("status") == "Completed")
+            for activities in bid_data.get("activities", {}).values()
+        )
+
+        # Completion by Track (percentage within each deliverable)
         completion_by_track = [
-            {"name": key, "value": sum(activity.get("progress", 0) for activity in activities)}
-            for key, activities in bid_data.get('activities', {}).items()
+            {
+                "name": deliverable,
+                "value": len([a for a in activities if a.get("status") == "Completed"]),
+                "total": len(activities),
+                "completionPercentage": round(
+                    (len([a for a in activities if a.get("status") == "Completed"]) / len(activities)) * 100, 2
+                ) if len(activities) > 0 else 0
+            }
+            for deliverable, activities in bid_data.get("activities", {}).items()
         ]
 
+        # Completion by Person (percentage of completed tasks they own)
         completion_by_person = {}
-        for activities in bid_data.get('activities', {}).values():
+        total_activities_by_person = {}
+        for activities in bid_data.get("activities", {}).values():
             for activity in activities:
-                owner = activity.get('owner', 'Unassigned')
-                completion_by_person[owner] = completion_by_person.get(owner, 0) + activity.get('progress', 0)
+                owner = activity.get("owner", "Unassigned")
+                total_activities_by_person[owner] = total_activities_by_person.get(owner, 0) + 1
+                if activity.get("status") == "Completed":
+                    completion_by_person[owner] = completion_by_person.get(owner, 0) + 1
 
-        upcoming_milestones = [
-            {"name": milestone, "date": bid_data['timeline'].get(milestone)}
-            for milestone in ['rfpIssueDate', 'qaSubmissionDate', 'proposalSubmissionDate']
-            if milestone in bid_data['timeline']
+        completion_by_person_data = [
+            {
+                "name": person,
+                "value": completion_by_person.get(person, 0),
+                "totalActivities": total_activities_by_person.get(person, 1),
+                "completionPercentage": round(
+                    (completion_by_person.get(person, 0) / total_activities_by_person.get(person, 1)) * 100, 2
+                ) if total_activities_by_person.get(person, 1) > 0 else 0
+            }
+            for person in total_activities_by_person
         ]
 
-        metrics = {
-            "completionByTrack": completion_by_track,
-            "completionByPerson": [{"name": key, "value": value} for key, value in completion_by_person.items()],
-            "upcomingMilestones": upcoming_milestones,
+        # Activities by Status (Grouped by Person)
+        activities_by_status = {}
+        for activities in bid_data.get("activities", {}).values():
+            for activity in activities:
+                owner = activity.get("owner", "Unassigned")
+                status = activity.get("status", "Unknown")
+                if owner not in activities_by_status:
+                    activities_by_status[owner] = {}
+                activities_by_status[owner][status] = activities_by_status[owner].get(status, 0) + 1
+
+        activities_by_status_chart = [
+            {"owner": owner, "statuses": statuses}
+            for owner, statuses in activities_by_status.items()
+        ]
+
+        # Prepare Activities List (Grouped by Deliverable)
+        grouped_activities = {
+            deliverable: [
+                {
+                    "name": activity.get("name", "Unnamed Activity"),
+                    "owner": activity.get("owner", "Unassigned"),
+                    "dueDate": activity.get("endDate", "N/A"),
+                    "status": activity.get("status", "Unknown"),
+                    "remarks": activity.get("remarks", "No Remarks"),
+                }
+                for activity in activities
+            ]
+            for deliverable, activities in bid_data.get("activities", {}).items()
         }
 
-        # Prepare activities
-        activities = [
-            {"name": activity.get("name"), "owner": activity.get("owner"), "dueDate": activity.get("dueDate")}
-            for activities in bid_data.get('activities', {}).values()
-            for activity in activities
-        ]
+        # Metrics Object
+        metrics = {
+            "totalActivities": total_activities,
+            "completedActivities": completed_activities,
+            "completionByTrack": completion_by_track,
+            "completionByPerson": completion_by_person_data,
+        }
 
-        # Prepare action tracker
-        action_tracker = [
-            {
-                "activity": activity.get("name"),
-                "status": activity.get("status"),
-                "actions": activity.get("actions"),
-                "remarks": activity.get("remarks"),
-            }
-            for activities in bid_data.get('activities', {}).values()
-            for activity in activities
-        ]
-
+        # Return JSON Response
         return jsonify({
             "success": True,
             "metrics": metrics,
-            "activities": activities,
-            "actionTracker": action_tracker,
+            "groupedActivities": grouped_activities,
+            "activitiesByStatus": activities_by_status_chart,
         }), 200
 
     except Exception as e:
         print(f"[ERROR] {str(e)}")
         return jsonify({"success": False, "message": f"Error generating dashboard data: {str(e)}"}), 500
-    
+
+# Update activity status from Dashboard
+@app.route('/api/bids/<bid_id>/deliverables/<deliverable>/activities', methods=['PUT'])
+def update_activity(bid_id, deliverable):
+    try:
+        updated_activity = request.json
+        file_path = get_bid_file_path(bid_id)
+
+        if not os.path.exists(file_path):
+            return jsonify({"success": False, "message": "Bid data not found."}), 404
+
+        with open(file_path, 'r') as file:
+            bid_data = json.load(file)
+
+        # Update the specific activity
+        activities = bid_data.get("activities", {}).get(deliverable, [])
+        for activity in activities:
+            if activity.get("name") == updated_activity.get("name"):
+                activity.update(updated_activity)
+
+        # Save the updated data
+        with open(file_path, 'w') as file:
+            json.dump(bid_data, file, indent=4)
+
+        return jsonify({"success": True, "message": "Activity updated successfully."}), 200
+
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True, host="0.0.0.0", port=5000)
