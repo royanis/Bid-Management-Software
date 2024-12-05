@@ -8,19 +8,23 @@ import shutil  # For moving files
 
 app = Flask(__name__)
 
-# Enable CORS for frontend origin
-CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}}, supports_credentials=True)
+# Get environment variables
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+BIDS_DIR = os.getenv("BIDS_DIR", "bids")
+
+# Enable CORS for the frontend origin
+CORS(app, resources={r"/*": {"origins": FRONTEND_URL}}, supports_credentials=True)
 
 # Ensure the `bids` directory exists
-os.makedirs('bids', exist_ok=True)
+os.makedirs(BIDS_DIR, exist_ok=True)
 
 # Utility function to get the file path for a bid
 def get_bid_file_path(bid_id="current_bid"):
-    return os.path.join('bids', f"{bid_id}.json")
+    return os.path.join(BIDS_DIR, f"{bid_id}.json")
 
 # Utility function to move older versions to archive
 def move_to_archive(bid_id):
-    archive_dir = os.path.join('bids', 'Archive')
+    archive_dir = os.path.join(BIDS_DIR, 'Archive')
     os.makedirs(archive_dir, exist_ok=True)
 
     file_path = get_bid_file_path(bid_id)
@@ -90,7 +94,7 @@ def create_bid():
 
             # Archive the most recent file
             latest_file = max(existing_files, key=extract_version)
-            latest_file_path = os.path.join('bids', latest_file)
+            latest_file_path = os.path.join(BIDS_DIR, latest_file)
             with open(latest_file_path, 'r') as file:
                 archived_data = json.load(file)
 
@@ -128,8 +132,8 @@ def move_to_archive_endpoint():
         if not file_name:
             return jsonify({"success": False, "message": "File name is required."}), 400
 
-        source_path = os.path.join('bids', f"{file_name}.json")
-        archive_path = os.path.join('bids', 'Archive', f"{file_name}.json")
+        source_path = os.path.join(BIDS_DIR, f"{file_name}.json")
+        archive_path = os.path.join(BIDS_DIR, 'Archive', f"{file_name}.json")
 
         if not os.path.exists(source_path):
             return jsonify({"success": False, "message": "File not found."}), 404
