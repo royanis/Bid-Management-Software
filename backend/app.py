@@ -406,5 +406,9 @@ def update_activity(bid_id, deliverable):
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
+@app.route('/')
+def home():
+    return jsonify({"message": "Backend is running successfully!"}), 200
+
 if __name__ == '__main__':
     app.run(debug=True, host="0.0.0.0", port=5000)
