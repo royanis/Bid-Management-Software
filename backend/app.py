@@ -13,7 +13,7 @@ FRONTEND_URL = os.getenv("FRONTEND_URL")
 BIDS_DIR = os.getenv("BIDS_DIR", "bids")
 
 # Enable CORS for the frontend origin
-CORS(app, resources={r"/*": {"origins": FRONTEND_URL}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": "https://bid-management-software.vercel.app"}}, supports_credentials=True)
 
 # Ensure the `bids` directory exists
 os.makedirs(BIDS_DIR, exist_ok=True)
