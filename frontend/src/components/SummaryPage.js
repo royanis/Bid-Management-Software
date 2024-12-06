@@ -17,7 +17,7 @@ import Header from './Header';
 import Footer from './Footer';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { saveBidData } from '../services/apiService';
+import { saveBidData, getBidData } from '../services/apiService';
 import { PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer } from 'recharts';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
