@@ -100,10 +100,24 @@ const SummaryPage = () => {
         bidData.bidId = `${clientName}_${opportunityName}_Version 1`;
       }
   
-      // Save the bid data with the updated bidId
-      await saveBidData(bidData);
+      // Fetch the data from current_bid.json
+      let existingData = {};
+      try {
+        const response = await getBidData('current_bid'); // Assuming `getBidData` fetches data by bidId
+        if (response) {
+          existingData = response;
+        }
+      } catch (error) {
+        console.warn('Could not fetch current_bid data. Proceeding with new data.');
+      }
   
-      alert(`Bid finalized and saved as: ${bidData.bidId}`);
+      // Merge existing data with the current bid data
+      const mergedBidData = { ...existingData, ...bidData };
+  
+      // Save the merged data with the updated bidId
+      await saveBidData(mergedBidData);
+  
+      alert(`Bid finalized and saved as: ${mergedBidData.bidId}`);
       navigate('/'); // Navigate to home
     } catch (error) {
       console.error('Error finalizing bid:', error);
