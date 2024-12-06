@@ -97,33 +97,34 @@ const CreateBidPlan = () => {
   };
 
   const saveBidWithVersioning = async (bidPayload) => {
-    const bidNameBase = `${clientName}_${opportunityName}`;
+    const bidNameBase = `${clientName.replace(/\s+/g, '_')}_${opportunityName.replace(/\s+/g, '_')}`;
     const existingFiles = await listFiles();
-  
-    const currentVersion = existingFiles
+    
+    // Extract all existing versions
+    const currentVersionNumbers = existingFiles
       .filter((file) => file.id.startsWith(bidNameBase))
       .map((file) => parseInt(file.id.match(/Version (\d+)/)?.[1], 10) || 0);
   
-    const newVersion = Math.max(0, ...currentVersion) + 1;
+    const newVersion = Math.max(0, ...currentVersionNumbers) + 1; // Increment version
     const newBidId = `${bidNameBase}_Version ${newVersion}`;
   
-    if (currentVersion.length > 0) {
-      const lastVersion = Math.max(...currentVersion);
+    if (currentVersionNumbers.length > 0) {
+      // Fetch the latest existing version
+      const lastVersion = Math.max(...currentVersionNumbers);
       const previousBidId = `${bidNameBase}_Version ${lastVersion}`;
       const previousBidData = await getBidData(previousBidId);
   
-      // Merge data from the previous version excluding `timeline` and `deliverables`
+      // Merge data from the previous version excluding timeline and deliverables
       bidPayload = {
         ...previousBidData,
         ...bidPayload,
         timeline: bidPayload.timeline, // Keep new timeline
         deliverables: bidPayload.deliverables, // Keep new deliverables
-        bidId: newBidId, // Update the ID to the new version
+        bidId: newBidId, // Assign the new versioned bidId
       };
   
       // Archive the previous version
-      const archiveFileName = `${bidNameBase}_Version ${lastVersion}`;
-      await moveToArchive(archiveFileName);
+      await moveToArchive(previousBidId);
     }
   
     // Save the new version
