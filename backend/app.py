@@ -10,7 +10,7 @@ app = Flask(__name__)
 
 # Get environment variables
 FRONTEND_URL = os.getenv("FRONTEND_URL")
-BIDS_DIR = os.getenv("BIDS_DIR", "bids")
+BIDS_DIR = "bids"
 
 # Enable CORS for the frontend origin
 CORS(app, resources={r"/*": {"origins": "https://bid-management-software.vercel.app"}}, supports_credentials=True)
