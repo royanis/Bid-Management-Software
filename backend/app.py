@@ -84,7 +84,7 @@ def create_bid():
         client_opportunity_prefix = f"{data['clientName']}_{data['opportunityName']}"
         version = 1
         existing_files = [
-            f for f in os.listdir('bids') if f.startswith(client_opportunity_prefix) and f.endswith('.json')
+            f for f in os.listdir('BIDS_DIR') if f.startswith(client_opportunity_prefix) and f.endswith('.json')
         ]
         new_bid_data = data  # Start with incoming data as the base
 
