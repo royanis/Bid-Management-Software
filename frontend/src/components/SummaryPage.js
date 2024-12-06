@@ -34,7 +34,7 @@ const calculateOwnerContributions = (activities) => {
   return Object.entries(contributions).map(([name, count]) => ({ name, count }));
 };
 
-// Helper function to prepare milestones
+// Helper function to prepare milestones 
 const calculateMilestones = (activities) => {
   return Object.entries(activities || {}).map(([deliverable, activityList]) => {
     const startDate = activityList.reduce(
