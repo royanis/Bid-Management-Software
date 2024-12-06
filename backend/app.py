@@ -9,7 +9,7 @@ import shutil  # For moving files
 app = Flask(__name__)
 
 # Get environment variables
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+FRONTEND_URL = os.getenv("FRONTEND_URL")
 BIDS_DIR = os.getenv("BIDS_DIR", "bids")
 
 # Enable CORS for the frontend origin
