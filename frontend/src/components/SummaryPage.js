@@ -93,8 +93,27 @@ const SummaryPage = () => {
 
   const finalizeBid = async () => {
     try {
-      await saveBidData(bidData); // Save current bid data
-      alert('Bid finalized and saved successfully.');
+      let updatedBidData = { ...bidData };
+  
+      // Check if the current bidId is 'current_bid'
+      if (bidData.bidId === 'current_bid') {
+        // Generate a new bidId using the clientName and opportunityName
+        const clientName = bidData.clientName.replace(/\s+/g, '_'); // Replace spaces with underscores
+        const opportunityName = bidData.opportunityName.replace(/\s+/g, '_');
+        const version = 1; // Default version for a new bid
+        const newBidId = `${clientName}_${opportunityName}_Version ${version}`; // Include space in 'Version 1'
+  
+        // Update the bidId in the bidData
+        updatedBidData = {
+          ...bidData,
+          bidId: newBidId,
+        };
+      }
+  
+      // Save the bid data with the updated bidId
+      await saveBidData(updatedBidData);
+  
+      alert(`Bid finalized and saved as ${updatedBidData.bidId}.`);
       navigate('/');
     } catch (error) {
       console.error('Error finalizing bid:', error);
