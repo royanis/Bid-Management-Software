@@ -1,0 +1,42 @@
+{
+    "clientName": "Test",
+    "opportunityName": "test opportunity",
+    "timeline": {
+        "rfpIssueDate": "2024-12-01",
+        "qaSubmissionDate": "2024-12-09",
+        "proposalSubmissionDate": "2024-12-25"
+    },
+    "deliverables": [
+        "Solution PPT"
+    ],
+    "activities": {
+        "Solution PPT": [
+            {
+                "name": "Draft",
+                "owner": "Unassigned",
+                "status": "Pending"
+            },
+            {
+                "name": "Review",
+                "owner": "Unassigned",
+                "status": "Pending"
+            },
+            {
+                "name": "Finalize",
+                "owner": "Unassigned",
+                "status": "Pending"
+            }
+        ]
+    },
+    "team": [
+        {
+            "name": "Anish",
+            "role": ""
+        },
+        {
+            "name": "Naresh",
+            "role": ""
+        }
+    ],
+    "bidId": "Test_test opportunity_Version 1"
+}

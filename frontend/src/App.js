@@ -10,6 +10,7 @@ import theme from './theme/theme';
 import DeliverableActivityPage from './components/DeliverableActivityPage';
 import SummaryPage from './components/SummaryPage';
 import ManageBidDashboardPage from './components/ManageBidDashboardPage';
+import Chatbot from './components/Chatbot'; // Import Chatbot
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 const App = () => {
@@ -41,6 +42,9 @@ const App = () => {
               {/* Fallback for Undefined Routes */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
+
+            {/* Chatbot Component */}
+            <Chatbot />
           </Router>
         </Box>
       </ThemeProvider>

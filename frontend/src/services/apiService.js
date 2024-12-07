@@ -2,11 +2,11 @@ import axios from 'axios';
 
 // Create an Axios instance with default settings
 const axiosInstance = axios.create({
-  baseURL: 'https://bid-management-software-backend.onrender.com', // Backend server URL (use environment variable if available)
+  baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000', // Ensure this matches your backend host/port
   headers: {
     'Content-Type': 'application/json', // Ensure consistent Content-Type
   },
-  withCredentials: true, // Enable credentials for cross-origin requests
+  withCredentials: true, // Enable credentials for cross-origin requests if needed
 });
 
 // Helper function to handle errors consistently
@@ -16,7 +16,15 @@ const handleApiError = (error, defaultMessage) => {
   throw new Error(errorMessage);
 };
 
-// API functions
+// New: Send a message to the chatbot
+export const sendChatbotMessage = async (query) => {
+  try {
+    const response = await axiosInstance.post('/chatbot', { query });
+    return response.data; // { response: "<chatbot reply>" }
+  } catch (error) {
+    handleApiError(error, 'Failed to communicate with chatbot.');
+  }
+};
 
 // Create a new bid
 export const createBid = async (data) => {
