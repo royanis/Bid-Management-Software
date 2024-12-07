@@ -8,10 +8,10 @@ import shutil
 
 app = Flask(__name__)
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
-BIDS_DIR = os.getenv("BIDS_DIR", "bids")
+FRONTEND_URL = os.getenv("FRONTEND_URL")
+BIDS_DIR = "bids"
 
-CORS(app, resources={r"/*": {"origins": FRONTEND_URL}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": "https://bid-management-software.vercel.app"}}, supports_credentials=True)
 
 os.makedirs(BIDS_DIR, exist_ok=True)
 
@@ -64,7 +64,7 @@ def log_request_info():
 
 @app.after_request
 def add_cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = FRONTEND_URL
+    response.headers["Access-Control-Allow-Origin"] = "https://bid-management-software.vercel.app"
     response.headers["Access-Control-Allow-Credentials"] = "true"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
