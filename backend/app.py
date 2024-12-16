@@ -5,17 +5,26 @@ import json
 import re
 from datetime import datetime
 import shutil
+import pytz
 
 app = Flask(__name__)
 
+#FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 FRONTEND_URL = os.getenv("FRONTEND_URL")
+
+#BIDS_DIR = os.getenv("BIDS_DIR", "bids")
 BIDS_DIR = "bids"
 
+#CORS(app, resources={r"/*": {"origins": FRONTEND_URL}}, supports_credentials=True)
 CORS(app, resources={r"/*": {"origins": "https://bid-management-software.vercel.app"}}, supports_credentials=True)
 
 os.makedirs(BIDS_DIR, exist_ok=True)
 
-# In-memory session data (single user scenario for demo)
+# Directory for Action Trackers
+ACTION_TRACKERS_DIR = os.path.join(BIDS_DIR, 'action_trackers')
+os.makedirs(ACTION_TRACKERS_DIR, exist_ok=True)
+
+# In-memory session data
 session_data = {
     "context": None,
     "bidDetails": {
@@ -36,13 +45,16 @@ session_data = {
 
 DEFAULT_DELIVERABLES = ['Solution PPT', 'Rate Card', 'Commercial Proposal', 'Resource Profiles']
 SUGGESTED_ACTIVITIES = {
-  'Solution PPT': ['Draft', 'Review', 'Finalize'],
-  'Rate Card': ['Prepare Rates', 'Approval'],
-  'Commercial Proposal': ['Draft Proposal', 'Review', 'Submit'],
+    'Solution PPT': ['Draft', 'Review', 'Finalize'],
+    'Rate Card': ['Prepare Rates', 'Approval'],
+    'Commercial Proposal': ['Draft Proposal', 'Review', 'Submit'],
 }
 
 def get_bid_file_path(bid_id="current_bid"):
     return os.path.join(BIDS_DIR, f"{bid_id}.json")
+
+def get_action_tracker_file_path(at_id):
+    return os.path.join(ACTION_TRACKERS_DIR, f"{at_id}.json")
 
 def move_to_archive(bid_id):
     archive_dir = os.path.join(BIDS_DIR, 'Archive')
@@ -50,25 +62,12 @@ def move_to_archive(bid_id):
     file_path = get_bid_file_path(bid_id)
     if os.path.exists(file_path):
         shutil.move(file_path, os.path.join(archive_dir, f"{bid_id}.json"))
+    # Move corresponding action tracker if exists
+    # We'll handle action trackers separately by their naming.
 
 def extract_version(filename):
-    match = re.search(r"_Version(\d+)", filename)
+    match = re.search(r"_version(\d+)", filename, re.IGNORECASE)
     return int(match.group(1)) if match else 1
-
-@app.before_request
-def log_request_info():
-    print(f"[Request] {request.method} {request.url}")
-    print(f"[Request Headers] {request.headers}")
-    if request.method != 'OPTIONS':
-        print(f"[Request Body] {request.get_data()}")
-
-@app.after_request
-def add_cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "https://bid-management-software.vercel.app"
-    response.headers["Access-Control-Allow-Credentials"] = "true"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-    return response
 
 def isValidDate(date_str):
     try:
@@ -99,36 +98,116 @@ def finalizeBid(bidDetails):
         bidNameBase = f"{bidDetails['clientName']}_{bidDetails['opportunityName']}"
         existing_files = [
             f for f in os.listdir(BIDS_DIR)
-            if f.startswith(bidNameBase) and f.endswith('.json')
+            if f.startswith(bidNameBase) and f.endswith('.json') and "action_trackers" not in f
         ]
         current_versions = [extract_version(f) for f in existing_files]
-        newVersion = (max(current_versions) + 1) if current_versions else 1
-        newBidId = f"{bidNameBase}_Version{newVersion}"
+        newVersion = max(current_versions) + 1 if current_versions else 1
+        newBidId = f"{bidNameBase}_version{newVersion}"
         newBidData = {**bidDetails, "bidId": newBidId}
 
         if current_versions:
             lastVersion = max(current_versions)
-            previousBidId = f"{bidNameBase}_Version{lastVersion}"
+            previousBidId = f"{bidNameBase}_version{lastVersion}"
             move_to_archive(previousBidId)
 
+        # Save the new bid JSON
         file_path = get_bid_file_path(newBidId)
         with open(file_path, 'w') as file:
             json.dump(newBidData, file, indent=4)
 
-        return f"Bid saved successfully as {newBidId}!"
+        # Initialize Action Tracker
+        at_base_id = get_action_tracker_base_id(bidDetails['clientName'], bidDetails['opportunityName'])
+        create_new_action_tracker_version(at_base_id, bidDetails['deliverables'])
+
+        return f"Bid saved successfully as {newBidId} and Action Tracker initialized!"
     except Exception as e:
         return f"An error occurred while saving the bid: {str(e)}"
 
+# Helper functions for Action Trackers
+def get_action_tracker_base_id(clientName, opportunityName):
+    return f"{clientName}_{opportunityName}_Action Tracker"
+
+def get_latest_action_tracker_file(at_base_id):
+    # Find all action tracker files starting with at_base_id
+    if not os.path.exists(ACTION_TRACKERS_DIR):
+        return None
+    files = [f for f in os.listdir(ACTION_TRACKERS_DIR) if f.startswith(at_base_id) and f.endswith('.json')]
+    if not files:
+        return None
+    current_versions = [extract_version(f) for f in files]
+    latest_version = max(current_versions) if current_versions else None
+    if latest_version is None:
+        return None
+    latest_file = f"{at_base_id}_version{latest_version}.json"
+    return os.path.join(ACTION_TRACKERS_DIR, latest_file)
+
+def archive_action_tracker(at_base_id):
+    archive_dir = os.path.join(BIDS_DIR, 'Archive')
+    os.makedirs(archive_dir, exist_ok=True)
+    files = [f for f in os.listdir(ACTION_TRACKERS_DIR) if f.startswith(at_base_id) and f.endswith('.json')]
+    if not files:
+        return
+    # Archive all existing versions
+    for f in files:
+        shutil.move(os.path.join(ACTION_TRACKERS_DIR, f), os.path.join(archive_dir, f))
+
+def create_new_action_tracker_version(at_base_id, deliverables):
+    # Check existing versions
+    files = [f for f in os.listdir(ACTION_TRACKERS_DIR) if f.startswith(at_base_id) and f.endswith('.json')]
+    if files:
+        existing_versions = [extract_version(f) for f in files]
+        version = max(existing_versions) + 1
+        # Archive old versions
+        archive_action_tracker(at_base_id)
+    else:
+        version = 1
+
+    new_at_id = f"{at_base_id}_version{version}"
+    new_at_path = get_action_tracker_file_path(new_at_id)
+    action_tracker_data = {
+        "bidId": at_base_id,  # Using at_base_id as reference. If needed, store actual bidId separately.
+        "totalActions": 0,
+        "openActions": 0,
+        "closedActions": 0,
+        "actionsByDeliverable": {},
+        "owners": [],
+        "deliverables": deliverables,
+        "actionHistory": {}
+    }
+
+    with open(new_at_path, 'w') as at_file:
+        json.dump(action_tracker_data, at_file, indent=4)
+
+    return new_at_path
+
+@app.before_request
+def log_request_info():
+    print(f"[Request] {request.method} {request.url}")
+    print("[Request Headers]", request.headers)
+    if request.method != 'OPTIONS':
+        print(f"[Request Body] {request.get_data()}")
+
+@app.after_request
+def add_cors_headers(response):
+    #response.headers["Access-Control-Allow-Origin"] = FRONTEND_URL
+    response.headers["Access-Control-Allow-Origin"] = "https://bid-management-software.vercel.app"
+
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    return response
+
 @app.route('/create-bid', methods=['OPTIONS', 'POST'])
-def create_bid():
+def create_bid_route():
     if request.method == 'OPTIONS':
         return jsonify({}), 200
-
     try:
         data = request.json
-        print("[DEBUG] Incoming data:", data)
         required_fields = ['clientName', 'opportunityName', 'timeline']
         timeline_fields = ['rfpIssueDate', 'qaSubmissionDate', 'proposalSubmissionDate']
+
+        # Log incoming data
+        print(f"[CREATE BID] Received data: {json.dumps(data, indent=4)}")
 
         for field in required_fields:
             if field not in data or not data[field]:
@@ -160,16 +239,18 @@ def create_bid():
             new_bid_data = {**archived_data, **data}
             new_bid_data['timeline'] = data['timeline']
             new_bid_data['deliverables'] = data['deliverables']
-            new_bid_data['bidId'] = f"{client_opportunity_prefix}_Version{version}"
+            new_bid_data['bidId'] = f"{client_opportunity_prefix}_version{version}"
 
             move_to_archive(latest_file.replace('.json', ''))
+        else:
+            new_bid_data['bidId'] = f"{client_opportunity_prefix}_version{version}"
 
-        bid_id = f"{client_opportunity_prefix}_Version{version}"
+        bid_id = new_bid_data['bidId']
         file_path = get_bid_file_path(bid_id)
         with open(file_path, 'w') as file:
             json.dump(new_bid_data, file, indent=4)
 
-        print("[DEBUG] Bid created successfully:", bid_id)
+        print(f"[CREATE BID] Bid created successfully: {bid_id}")
         return jsonify({"success": True, "message": f"Bid created successfully: {bid_id}", "bidId": bid_id}), 201
     except Exception as e:
         print(f"[ERROR] {str(e)}")
@@ -193,6 +274,12 @@ def move_to_archive_endpoint():
             return jsonify({"success": False, "message": "File not found."}), 404
 
         shutil.move(source_path, archive_path)
+
+        # Move corresponding action tracker if exists
+        action_tracker_path = get_action_tracker_file_path(file_name)
+        if os.path.exists(action_tracker_path):
+            shutil.move(action_tracker_path, os.path.join(BIDS_DIR, 'Archive', f"{file_name}_action_tracker.json"))
+
         return jsonify({"success": True, "message": f"File '{file_name}' moved to archive."}), 200
 
     except Exception as e:
@@ -200,14 +287,13 @@ def move_to_archive_endpoint():
         return jsonify({"success": False, "message": f"Error moving file to archive: {str(e)}"}), 500
 
 @app.route('/save-bid-data', methods=['OPTIONS', 'POST'])
-def save_bid_data():
+def save_bid_data_route():
     if request.method == 'OPTIONS':
         return jsonify({}), 200
     try:
         data = request.json
         bid_id = data.get('bidId', 'current_bid')
         file_path = get_bid_file_path(bid_id)
-
         with open(file_path, 'w') as file:
             json.dump(data, file, indent=4)
 
@@ -217,16 +303,14 @@ def save_bid_data():
         return jsonify({"success": False, "message": f"Error saving bid data: {str(e)}"}), 500
 
 @app.route('/get-bid-data', methods=['OPTIONS', 'GET'])
-def get_bid_data():
+def get_bid_data_route():
     if request.method == 'OPTIONS':
         return jsonify({}), 200
     try:
         bid_id = request.args.get('bidId', 'current_bid')
         file_path = get_bid_file_path(bid_id)
-
         if not os.path.exists(file_path):
             return jsonify({"message": "No bid data found.", "data": None}), 404
-
         with open(file_path, 'r') as file:
             data = json.load(file)
         return jsonify({"message": "Bid data fetched successfully.", "data": data}), 200
@@ -235,7 +319,7 @@ def get_bid_data():
         return jsonify({"success": False, "message": f"Error fetching bid data: {str(e)}"}), 500
 
 @app.route('/list-files', methods=['OPTIONS', 'GET'])
-def list_files():
+def list_files_route():
     if request.method == 'OPTIONS':
         return jsonify({}), 200
     try:
@@ -261,7 +345,7 @@ def list_files():
             with open(file_path, 'r') as file:
                 file_data = json.load(file)
                 file_list.append({
-                    "id": os.path.basename(file_path).replace('.json', ''),
+                    "id": os.path.basename(file_path).replace('.json', '').replace('_action_tracker', ''),
                     "clientName": file_data.get('clientName', 'Unknown'),
                     "opportunityName": file_data.get('opportunityName', 'Unknown'),
                     "lastModified": os.path.getmtime(file_path),
@@ -274,7 +358,7 @@ def list_files():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/delete-bid-data', methods=['OPTIONS', 'DELETE'])
-def delete_bid_data():
+def delete_bid_data_route():
     if request.method == 'OPTIONS':
         return jsonify({}), 200
     try:
@@ -283,6 +367,9 @@ def delete_bid_data():
 
         if os.path.exists(file_path):
             os.remove(file_path)
+            action_tracker_path = get_action_tracker_file_path(bid_id)
+            if os.path.exists(action_tracker_path):
+                os.remove(action_tracker_path)
             return jsonify({"message": "Bid data deleted successfully."}), 200
         else:
             return jsonify({"message": "No bid data found to delete."}), 404
@@ -291,7 +378,7 @@ def delete_bid_data():
         return jsonify({"success": False, "message": f"Error deleting bid data: {str(e)}"}), 500
 
 @app.route('/save-activities', methods=['POST'])
-def save_activities():
+def save_activities_route():
     data = request.json
     deliverable = data.get('deliverable')
     activities = data.get('activities')
@@ -301,7 +388,6 @@ def save_activities():
 
     bid_id = "current_bid"
     file_path = get_bid_file_path(bid_id)
-
     with open(file_path, 'r') as file:
         bid_data = json.load(file)
 
@@ -313,14 +399,11 @@ def save_activities():
 
     return jsonify({"success": True, "message": "Activities saved successfully"})
 
-@app.route('/api/dashboard', methods=['GET'])
-def get_dashboard_data():
+@app.route('/api/dashboard', methods=['GET'], endpoint='get_dashboard_data')
+def get_dashboard_data_route():
     try:
         bid_id = request.args.get('bidId', 'current_bid')
         file_path = get_bid_file_path(bid_id)
-        print(f"[DEBUG] Received bidId: {bid_id}")
-        print(f"[DEBUG] File path resolved to: {file_path}")
-
         if not os.path.exists(file_path):
             return jsonify({"success": False, "message": "Bid data not found.", "data": None}), 404
 
@@ -385,7 +468,7 @@ def get_dashboard_data():
                 {
                     "name": activity.get("name", "Unnamed Activity"),
                     "owner": activity.get("owner", "Unassigned"),
-                    "dueDate": activity.get("endDate", "N/A"),
+                    "endDate": activity.get("endDate", "N/A"),
                     "status": activity.get("status", "Unknown"),
                     "remarks": activity.get("remarks", "No Remarks"),
                 }
@@ -412,8 +495,8 @@ def get_dashboard_data():
         print(f"[ERROR] {str(e)}")
         return jsonify({"success": False, "message": f"Error generating dashboard data: {str(e)}"}), 500
 
-@app.route('/api/bids/<bid_id>/deliverables/<deliverable>/activities', methods=['PUT'])
-def update_activity(bid_id, deliverable):
+@app.route('/api/bids/<bid_id>/deliverables/<deliverable>/activities', methods=['PUT'], endpoint='update_activity')
+def update_activity_route(bid_id, deliverable):
     try:
         updated_activity = request.json
         file_path = get_bid_file_path(bid_id)
@@ -432,22 +515,471 @@ def update_activity(bid_id, deliverable):
         with open(file_path, 'w') as file:
             json.dump(bid_data, file, indent=4)
 
+        # Update Action Tracker metrics if exists
+        # Note: Action tracker ID differs from bid_id. We must derive it.
+        # If bid_id = Client_Opportunity_versionX, action tracker base = Client_Opportunity_Action Tracker
+        parts = bid_id.split('_')
+        if len(parts) > 2:
+            # last part is version
+            clientName = parts[0]
+            opportunityName = "_".join(parts[1:-1])  # rejoin middle parts
+            at_base_id = get_action_tracker_base_id(clientName, opportunityName)
+            action_tracker_file = get_latest_action_tracker_file(at_base_id)
+            if action_tracker_file and os.path.exists(action_tracker_file):
+                with open(action_tracker_file, 'r') as at_file:
+                    action_tracker = json.load(at_file)
+
+                action_tracker['totalActions'] = sum(len(acts) for acts in bid_data.get("activities", {}).values())
+                action_tracker['openActions'] = sum(
+                    sum(1 for act in acts if act.get("status") != "Completed")
+                    for acts in bid_data.get("activities", {}).values()
+                )
+                action_tracker['closedActions'] = sum(
+                    sum(1 for act in acts if act.get("status") == "Completed")
+                    for acts in bid_data.get("activities", {}).values()
+                )
+
+                with open(action_tracker_file, 'w') as at_file:
+                    json.dump(action_tracker, at_file, indent=4)
+
         return jsonify({"success": True, "message": "Activity updated successfully."}), 200
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/')
-def home():
+def home_route():
     return jsonify({"message": "Backend is running successfully!"}), 200
 
+# Action Tracker endpoints
+@app.route('/api/action-trackers/<bid_id>', methods=['OPTIONS', 'GET'])
+def get_action_tracker_route(bid_id):
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    try:
+        # Convert bid_id to action tracker base id by removing version and adding Action Tracker
+        parts = bid_id.split('_')
+        if len(parts) < 3:
+            return jsonify({"success": False, "message": "Invalid bidID format for Action Tracker."}), 400
+        clientName = parts[0]
+        opportunityName = "_".join(parts[1:-1])
+        at_base_id = get_action_tracker_base_id(clientName, opportunityName)
+
+        at_file = get_latest_action_tracker_file(at_base_id)
+        if not at_file:
+            return jsonify({"success": False, "message": "Action Tracker not found for this Bid ID.", "data": None}), 404
+
+        with open(at_file, 'r') as at_f:
+            action_tracker_data = json.load(at_f)
+
+        return jsonify({"success": True, "data": action_tracker_data}), 200
+    except Exception as e:
+        print(f"[ERROR] {str(e)}")
+        return jsonify({"success": False, "message": f"Error fetching Action Tracker data: {str(e)}"}), 500
+
+@app.route('/api/action-trackers', methods=['OPTIONS', 'POST'])
+def create_action_tracker_route():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    try:
+        data = request.json
+        bid_id = data.get('bidId')
+
+        if not bid_id:
+            return jsonify({"success": False, "message": "Bid ID is required."}), 400
+
+        bid_file_path = get_bid_file_path(bid_id)
+        if not os.path.exists(bid_file_path):
+            return jsonify({"success": False, "message": "Bid not found."}), 404
+
+        with open(bid_file_path, 'r') as bid_file:
+            bid_data = json.load(bid_file)
+
+        # Build action tracker base id
+        parts = bid_id.split('_')
+        if len(parts) < 3:
+            return jsonify({"success": False, "message": "Invalid bid ID format."}), 400
+        clientName = parts[0]
+        opportunityName = "_".join(parts[1:-1])
+        at_base_id = get_action_tracker_base_id(clientName, opportunityName)
+
+        new_file_path = create_new_action_tracker_version(at_base_id, bid_data.get("deliverables", []))
+        with open(new_file_path, 'r') as nf:
+            action_tracker_data = json.load(nf)
+
+        return jsonify({"success": True, "message": "Action Tracker created successfully.", "data": action_tracker_data}), 201
+
+    except Exception as e:
+        print(f"[ERROR] {str(e)}")
+        return jsonify({"success": False, "message": f"Error creating Action Tracker: {str(e)}"}), 500
+
+@app.route('/api/action-trackers/<bid_id>', methods=['OPTIONS', 'PUT'])
+def update_action_tracker_route(bid_id):
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    try:
+        parts = bid_id.split('_')
+        if len(parts) < 3:
+            return jsonify({"success": False, "message": "Invalid bid ID format for Action Tracker."}), 400
+        clientName = parts[0]
+        opportunityName = "_".join(parts[1:-1])
+        at_base_id = get_action_tracker_base_id(clientName, opportunityName)
+
+        at_file = get_latest_action_tracker_file(at_base_id)
+        if not at_file:
+            return jsonify({"success": False, "message": "Action Tracker not found for this Bid ID."}), 404
+
+        updates = request.json
+        with open(at_file, 'r') as at_f:
+            action_tracker_data = json.load(at_f)
+
+        action_tracker_data.update(updates)
+
+        with open(at_file, 'w') as at_f:
+            json.dump(action_tracker_data, at_f, indent=4)
+
+        return jsonify({"success": True, "message": "Action Tracker updated successfully.", "data": action_tracker_data}), 200
+
+    except Exception as e:
+        print(f"[ERROR] {str(e)}")
+        return jsonify({"success": False, "message": f"Error updating Action Tracker: {str(e)}"}), 500
+
+@app.route('/api/action-trackers/<bid_id>/actions', methods=['OPTIONS', 'POST'])
+def add_action_route(bid_id):
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    try:
+        action = request.json
+        deliverable = action.get('deliverable')
+        owner = action.get('owner')
+        status = action.get('status', 'Pending')
+
+        # actionId is now generated automatically
+        if not deliverable or not owner:
+            return jsonify({"success": False, "message": "Deliverable and Owner are required"}), 400
+
+        parts = bid_id.split('_')
+        if len(parts) < 3:
+            return jsonify({"success": False, "message": "Invalid bid ID format for Action Tracker."}), 400
+        clientName = parts[0]
+        opportunityName = "_".join(parts[1:-1])
+        at_base_id = get_action_tracker_base_id(clientName, opportunityName)
+
+        at_file = get_latest_action_tracker_file(at_base_id)
+        if not at_file:
+            return jsonify({"success": False, "message": "Action Tracker not found for this Bid ID."}), 404
+
+        with open(at_file, 'r') as at_f:
+            action_tracker_data = json.load(at_f)
+
+        if deliverable not in action_tracker_data.get("deliverables", []):
+            return jsonify({"success": False, "message": "Invalid Deliverable."}), 400
+
+        if deliverable not in action_tracker_data["actionsByDeliverable"]:
+            action_tracker_data["actionsByDeliverable"][deliverable] = []
+
+        # Generate a new actionId by finding max existing one
+        max_id = 0
+        for acts in action_tracker_data["actionsByDeliverable"].values():
+            for a in acts:
+                try:
+                    aid = int(a["actionId"])
+                    if aid > max_id:
+                        max_id = aid
+                except:
+                    pass
+        new_id = max_id + 1
+
+        new_action = {
+            "actionId": str(new_id),
+            "name": action.get("name"),
+            "deliverable": action.get("deliverable"),
+            "owner": owner,
+            "endDate": action.get("endDate"),
+            "status": status,
+            "remarks": action.get("remarks", ""),
+        }
+
+        action_tracker_data["actionsByDeliverable"][deliverable].append(new_action)
+
+        # Recalculate total, open, closed actions
+        total = 0
+        closed = 0
+        open_count = 0
+        owners_set = set()
+        for dacts in action_tracker_data["actionsByDeliverable"].values():
+            for a in dacts:
+                total += 1
+                owners_set.add(a["owner"])
+                if a["status"].lower() == "completed":
+                    closed += 1
+                else:
+                    open_count += 1
+
+        action_tracker_data["totalActions"] = total
+        action_tracker_data["openActions"] = open_count
+        action_tracker_data["closedActions"] = closed
+        action_tracker_data["owners"] = list(owners_set)
+
+        action_tracker_data["actionHistory"][str(new_id)] = [{
+            "date": action.get("createdDate", ""),
+            "changedBy": action.get("changedBy", "system"),
+            "change": "Action Created"
+        }]
+
+        with open(at_file, 'w') as at_f:
+            json.dump(action_tracker_data, at_f, indent=4)
+
+        return jsonify({"success": True, "message": "Action added successfully.", "data": new_action}), 201
+    except Exception as e:
+        print(f"[ERROR] {str(e)}")
+        return jsonify({"success": False, "message": f"Error adding action: {str(e)}"}), 500
+
+# Ensure update_existing_action, delete actions also re-calculate metrics in a similar manner
+@app.route('/api/action-trackers/<bid_id>/actions/<action_id>', methods=['OPTIONS', 'DELETE'])
+def delete_action_route(bid_id, action_id):
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    try:
+        parts = bid_id.split('_')
+        if len(parts) < 3:
+            return jsonify({"success": False, "message": "Invalid bid ID format for Action Tracker."}), 400
+        clientName = parts[0]
+        opportunityName = "_".join(parts[1:-1])
+        at_base_id = get_action_tracker_base_id(clientName, opportunityName)
+
+        at_file = get_latest_action_tracker_file(at_base_id)
+        if not at_file:
+            return jsonify({"success": False, "message": "Action Tracker not found for this Bid ID."}), 404
+
+        with open(at_file, 'r') as at_f:
+            action_tracker_data = json.load(at_f)
+
+        action_found = False
+        removed_action = None
+        for deliverable, actions in action_tracker_data.get("actionsByDeliverable", {}).items():
+            for action in actions:
+                if action.get("actionId") == action_id:
+                    removed_action = action
+                    actions.remove(action)
+                    action_found = True
+                    if not actions:
+                        del action_tracker_data["actionsByDeliverable"][deliverable]
+                    break
+            if action_found:
+                break
+
+        if not action_found:
+            return jsonify({"success": False, "message": "Action ID not found."}), 404
+
+        # Recalculate metrics
+        total = 0
+        closed = 0
+        open_count = 0
+        owners_set = set()
+        for dacts in action_tracker_data["actionsByDeliverable"].values():
+            for a in dacts:
+                total += 1
+                owners_set.add(a["owner"])
+                if a["status"].lower() == "completed":
+                    closed += 1
+                else:
+                    open_count += 1
+
+        action_tracker_data["totalActions"] = total
+        action_tracker_data["openActions"] = open_count
+        action_tracker_data["closedActions"] = closed
+        action_tracker_data["owners"] = list(owners_set)
+
+        if action_id in action_tracker_data.get("actionHistory", {}):
+            del action_tracker_data["actionHistory"][action_id]
+
+        with open(at_file, 'w') as at_f:
+            json.dump(action_tracker_data, at_f, indent=4)
+
+        return jsonify({"success": True, "message": "Action deleted successfully."}), 200
+    except Exception as e:
+        print(f"[ERROR] {str(e)}")
+        return jsonify({"success": False, "message": f"Error deleting action: {str(e)}"}), 500
+
+@app.route('/api/action-trackers/<bid_id>/actions/<action_id>', methods=['OPTIONS', 'PUT'])
+def update_action_endpoint(bid_id, action_id):
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    try:
+        updated_data = request.json
+
+        # Derive at_base_id
+        parts = bid_id.split('_')
+        if len(parts) < 3:
+            return jsonify({"success": False, "message": "Invalid bid ID format for Action Tracker."}), 400
+        clientName = parts[0]
+        opportunityName = "_".join(parts[1:-1])
+        at_base_id = get_action_tracker_base_id(clientName, opportunityName)
+
+        at_file = get_latest_action_tracker_file(at_base_id)
+        if not at_file:
+            return jsonify({"success": False, "message": "Action Tracker not found for this Bid ID."}), 404
+
+        with open(at_file, 'r') as at_f:
+            action_tracker_data = json.load(at_f)
+
+        # We must find the action's old location (old deliverable)
+        old_deliverable = None
+        old_action = None
+        for d, actions in action_tracker_data.get("actionsByDeliverable", {}).items():
+            for a in actions:
+                if a.get("actionId") == action_id:
+                    old_deliverable = d
+                    old_action = a.copy()  # keep old state for comparison
+                    break
+            if old_deliverable is not None:
+                break
+
+        if not old_deliverable:
+            return jsonify({"success": False, "message": "Action not found."}), 404
+
+        # If deliverable changed, we must move the action
+        new_deliverable = updated_data.get("deliverable", old_action.get("deliverable", old_deliverable))
+
+        # Remove from old deliverable
+        # Find the action in old_deliverable and remove it
+        for idx, act in enumerate(action_tracker_data["actionsByDeliverable"][old_deliverable]):
+            if act["actionId"] == action_id:
+                action_tracker_data["actionsByDeliverable"][old_deliverable].pop(idx)
+                break
+        # If new deliverable doesn't exist in dictionary, create it
+        if new_deliverable not in action_tracker_data["actionsByDeliverable"]:
+            action_tracker_data["actionsByDeliverable"][new_deliverable] = []
+
+        # Prepare updated action
+        updated_action = old_action.copy()
+        for key, val in updated_data.items():
+            if key not in ["changedFields", "changedDate", "changedBy"]:
+                updated_action[key] = val
+
+        # Add the action to the new deliverable
+        action_tracker_data["actionsByDeliverable"][new_deliverable].append(updated_action)
+
+        # Recalculate metrics
+        total = 0
+        closed = 0
+        owners_set = set()
+        for acts in action_tracker_data["actionsByDeliverable"].values():
+            for a in acts:
+                total += 1
+                owners_set.add(a.get("owner", "Unassigned"))
+                if a.get("status", "").lower() == "completed":
+                    closed += 1
+        open_count = total - closed
+        action_tracker_data["totalActions"] = total
+        action_tracker_data["openActions"] = open_count
+        action_tracker_data["closedActions"] = closed
+        action_tracker_data["owners"] = list(owners_set)
+
+        # Record history
+        # If action_id not in actionHistory, create empty list
+        if action_id not in action_tracker_data["actionHistory"]:
+            action_tracker_data["actionHistory"][action_id] = []
+
+        # Get IST timestamp if not provided
+        ist = pytz.timezone('Asia/Kolkata')
+        changedDate = updated_data.get("changedDate")
+        if not changedDate:
+            changedDate = datetime.now(ist).isoformat()
+
+        # changedFields is passed from frontend, store them as is
+        changedFields = updated_data.get("changedFields", [])
+
+        action_tracker_data["actionHistory"][action_id].append({
+            "date": changedDate,
+            "changedBy": updated_data.get("changedBy", "user"),
+            "changedFields": changedFields,
+            "change": "Action Updated"
+        })
+
+        # Write back to file
+        with open(at_file, 'w') as at_f:
+            json.dump(action_tracker_data, at_f, indent=4)
+
+        return jsonify({"success": True, "message": "Action updated successfully."}), 200
+
+    except Exception as e:
+        print(f"[ERROR] {str(e)}")
+        return jsonify({"success": False, "message": str(e)}), 500
+    
+@app.route('/api/action-trackers/<bid_id>/actions/<action_id>/history', methods=['OPTIONS', 'GET'])
+def get_action_history_route(bid_id, action_id):
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    try:
+        parts = bid_id.split('_')
+        if len(parts) < 3:
+            return jsonify({"success": False, "message": "Invalid bid ID format for Action Tracker."}), 400
+        clientName = parts[0]
+        opportunityName = "_".join(parts[1:-1])
+        at_base_id = get_action_tracker_base_id(clientName, opportunityName)
+
+        at_file = get_latest_action_tracker_file(at_base_id)
+        if not at_file:
+            return jsonify({"success": False, "message": "Action Tracker not found."}), 404
+
+        with open(at_file, 'r') as at_f:
+            action_tracker_data = json.load(at_f)
+
+        history = action_tracker_data.get("actionHistory", {}).get(action_id, [])
+        return jsonify({"success": True, "history": history}), 200
+    except Exception as e:
+        print(f"[ERROR] {str(e)}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/finalize_bid', methods=['OPTIONS', 'POST'])
+def finalize_bid_route():
+    if request.method == 'OPTIONS':
+        # CORS preflight request, handled by flask_cors
+        return jsonify({}), 200
+
+    try:
+        data = request.json
+
+        if not data:
+            return jsonify({"success": False, "message": "No data provided."}), 400
+
+        # Extract bidDetails from the nested structure
+        bidDetails = data.get('bidDetails')
+
+        if not bidDetails:
+            return jsonify({"success": False, "message": "bidDetails are missing."}), 400
+
+        # Log bidDetails to verify integrity
+        print(f"[FINALIZE BID] Received bidDetails: {json.dumps(bidDetails, indent=4)}")
+
+        # Validate required fields
+        required_fields = ['clientName', 'opportunityName', 'timeline', 'deliverables', 'activities', 'team']
+        timeline_fields = ['rfpIssueDate', 'qaSubmissionDate', 'proposalSubmissionDate']
+
+        for field in required_fields:
+            if field not in bidDetails or not bidDetails[field]:
+                return jsonify({"success": False, "message": f"Field '{field}' is missing or empty."}), 400
+
+        for t_field in timeline_fields:
+            if t_field not in bidDetails['timeline'] or not bidDetails['timeline'][t_field]:
+                return jsonify({"success": False, "message": f"Timeline field '{t_field}' is missing or empty."}), 400
+
+        # Call the existing finalizeBid function
+        message = finalizeBid(bidDetails)
+
+        if "error" in message.lower():
+            return jsonify({"success": False, "message": message}), 500
+        else:
+            return jsonify({"success": True, "message": message}), 200
+
+    except Exception as e:
+        print(f"[FINALIZE BID ERROR] {str(e)}")
+        return jsonify({"success": False, "message": f"An error occurred: {str(e)}"}), 500
+        
 @app.route('/chatbot', methods=['POST'])
-def chatbot():
-    """
-    Handle chatbot queries and provide dynamic responses with:
-    - Additional step-by-step assignments for owners, dates, and status.
-    - Suggestions for clickable pre-populated options.
-    """
+def chatbot_route():
     try:
         data = request.json
         query = data.get("query", "").strip()
@@ -486,6 +1018,7 @@ def chatbot():
             else:
                 return jsonify({"response": "I'm sorry, I didn't understand that. Can you rephrase?"})
 
+        # Handle different contexts
         if context == "client_name":
             if len(query) < 3:
                 return jsonify({"response": "Client name is too short. Please provide a valid name."})
@@ -674,6 +1207,7 @@ def chatbot():
         elif context == "review":
             if lowerInput == "finalize":
                 msg = finalizeBid(bidDetails)
+                # Initialize Action Tracker within finalizeBid
                 # Reset session data after finalizing if desired
                 session_data["context"] = None
                 session_data["bidDetails"] = {
@@ -701,6 +1235,18 @@ def chatbot():
     except Exception as e:
         print(f"[CHATBOT ERROR] {str(e)}")
         return jsonify({"response": f"An error occurred: {str(e)}"}), 500
+    
+@app.errorhandler(400)
+def bad_request(error):
+    return jsonify({'error': 'Bad Request', 'message': error.description}), 400
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Not Found', 'message': error.description}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': 'Internal Server Error', 'message': 'An unexpected error occurred.'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host="0.0.0.0", port=5000)

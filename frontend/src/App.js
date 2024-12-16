@@ -1,3 +1,4 @@
+// src/App.js
 import React from 'react';
 import { ThemeProvider } from '@mui/material/styles';
 import { CssBaseline, Box } from '@mui/material';
@@ -10,6 +11,7 @@ import theme from './theme/theme';
 import DeliverableActivityPage from './components/DeliverableActivityPage';
 import SummaryPage from './components/SummaryPage';
 import ManageBidDashboardPage from './components/ManageBidDashboardPage';
+import ActionTrackerPage from './components/ActionTrackerPage'; // Import ActionTrackerPage
 import Chatbot from './components/Chatbot'; // Import Chatbot
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -36,8 +38,11 @@ const App = () => {
               {/* Summary Page*/}
               <Route path="/summary" element={<SummaryPage />} />
 
-              {/* Manage Bid Landing Page*/}
+              {/* Manage Bid Dashboard */}
               <Route path="/manage-bid" element={<ManageBidDashboardPage />} />
+
+              {/* Action Tracker Page */}
+              <Route path="/action-tracker" element={<ActionTrackerPage />} />
 
               {/* Fallback for Undefined Routes */}
               <Route path="*" element={<Navigate to="/" replace />} />

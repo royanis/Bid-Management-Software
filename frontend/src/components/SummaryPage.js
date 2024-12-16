@@ -1,4 +1,6 @@
-import React, { useRef } from 'react';
+// src/components/SummaryPage.jsx
+
+import React, { useRef, useState } from 'react';
 import {
   Box,
   Typography,
@@ -17,11 +19,17 @@ import Header from './Header';
 import Footer from './Footer';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { saveBidData, getBidData } from '../services/apiService';
+import {
+  saveBidData,
+  getBidData,
+  listFiles,
+  moveToArchive,
+  createActionTracker,
+  getActionTrackerData,
+} from '../services/apiService';
 import { PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer } from 'recharts';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
-// Helper function to calculate owner contributions
 const calculateOwnerContributions = (activities) => {
   const contributions = {};
   Object.values(activities || {}).forEach((activityList) => {
@@ -34,26 +42,26 @@ const calculateOwnerContributions = (activities) => {
   return Object.entries(contributions).map(([name, count]) => ({ name, count }));
 };
 
-// Helper function to prepare milestones 
 const calculateMilestones = (activities) => {
   return Object.entries(activities || {}).map(([deliverable, activityList]) => {
     const startDate = activityList.reduce(
-      (min, activity) => (new Date(activity.start_date) < new Date(min) ? activity.start_date : min),
-      activityList[0]?.start_date
+      (min, activity) => (new Date(activity.startDate) < new Date(min) ? activity.startDate : min),
+      activityList[0]?.startDate
     );
     const endDate = activityList.reduce(
-      (max, activity) => (new Date(activity.end_date) > new Date(max) ? activity.end_date : max),
-      activityList[0]?.end_date
+      (max, activity) => (new Date(activity.endDate) > new Date(max) ? activity.endDate : max),
+      activityList[0]?.endDate
     );
     return { deliverable, startDate, endDate };
   });
 };
 
 const SummaryPage = () => {
-  const { bidData } = useBidContext();
+  const { bidData, showSnackbar } = useBidContext();
   const summaryRef = useRef();
   const navigate = useNavigate();
-  const [homeDialog, setHomeDialog] = React.useState(false);
+  const [homeDialog, setHomeDialog] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
 
   const deliverableActivities = bidData.deliverables?.map((deliverable) => ({
     name: deliverable,
@@ -92,36 +100,55 @@ const SummaryPage = () => {
   };
 
   const finalizeBid = async () => {
+    setFinalizing(true);
     try {
-      // If `bidId` is not set or is "current_bid", construct a new bidId
+      // Construct final bidId if not done yet
       if (!bidData.bidId || bidData.bidId === 'current_bid') {
-        const clientName = bidData.clientName?.replace(/\s+/g, '_') || 'UnknownClient';
-        const opportunityName = bidData.opportunityName?.replace(/\s+/g, '_') || 'UnknownOpportunity';
-        bidData.bidId = `${clientName}_${opportunityName}_Version 1`;
+        const clientName = bidData.clientName?.trim() || 'Unknown Client';
+        const opportunityName = bidData.opportunityName?.trim() || 'Unknown Opportunity';
+        // We'll just name the first version as Version1. The backend will handle subsequent versions if needed.
+        bidData.bidId = `${clientName}_${opportunityName}_Version1`;
       }
-  
-      // Fetch the data from current_bid.json
+
+      // Merge with any existing current_bid data
       let existingData = {};
       try {
-        const response = await getBidData('current_bid'); // Assuming `getBidData` fetches data by bidId
+        const response = await getBidData('current_bid');
         if (response) {
           existingData = response;
         }
       } catch (error) {
         console.warn('Could not fetch current_bid data. Proceeding with new data.');
       }
-  
-      // Merge existing data with the current bid data
+
       const mergedBidData = { ...existingData, ...bidData };
-  
-      // Save the merged data with the updated bidId
       await saveBidData(mergedBidData);
-  
+
+      // Attempt to get action tracker data
+      try {
+        const atData = await getActionTrackerData(mergedBidData.bidId);
+        if (!atData) {
+          // no action tracker found, create a new one
+          await createActionTracker(mergedBidData.bidId);
+          showSnackbar('Action Tracker created successfully.', 'success');
+        } else {
+          // Action tracker exists, create a new version in backend by calling create again
+          await createActionTracker(mergedBidData.bidId);
+          showSnackbar('New version of Action Tracker created successfully.', 'success');
+        }
+      } catch (atError) {
+        // If 404 or error, try creating a new action tracker
+        await createActionTracker(mergedBidData.bidId);
+        showSnackbar('Action Tracker created successfully.', 'success');
+      }
+
       alert(`Bid finalized and saved as: ${mergedBidData.bidId}`);
-      navigate('/'); // Navigate to home
+      navigate('/');
     } catch (error) {
       console.error('Error finalizing bid:', error);
       alert('Failed to finalize the bid. Please try again.');
+    } finally {
+      setFinalizing(false);
     }
   };
 
@@ -160,7 +187,6 @@ const SummaryPage = () => {
           </Grid>
         </Paper>
 
-        {/* Charts */}
         <Grid container spacing={4} sx={{ marginBottom: 4 }}>
           <Grid item xs={12} md={6}>
             <Typography variant="h6" color="primary" gutterBottom>
@@ -237,12 +263,18 @@ const SummaryPage = () => {
           variant="outlined"
           color="secondary"
           onClick={() => setHomeDialog(true)}
-          sx={{ marginRight: 2 }}
+          sx={{ mr: 2 }}
         >
           Home
         </Button>
-        <Button variant="contained" color="primary" onClick={finalizeBid} sx={{ marginRight: 2 }}>
-          Finalize Bid
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={finalizeBid}
+          sx={{ mr: 2 }}
+          disabled={finalizing}
+        >
+          {finalizing ? 'Finalizing...' : 'Finalize Bid'}
         </Button>
         <Button variant="contained" color="primary" onClick={exportToPDF}>
           Export to PDF

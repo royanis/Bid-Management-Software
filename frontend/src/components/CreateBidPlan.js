@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+// src/components/CreateBidPlan.jsx
+
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -18,9 +20,10 @@ import Footer from './Footer';
 const CreateBidPlan = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { bidData, setBidData, resetBidData } = useBidContext();
+  const { bidData, setBidData, resetBidData, showSnackbar } = useBidContext();
 
-  const prepopulatedDeliverables = [
+  // Use useMemo to avoid re-creating this array on each render
+  const prepopulatedDeliverables = useMemo(() => [
     { label: 'Executive Summary', selected: false },
     { label: 'Solution PPT', selected: false },
     { label: 'Supplier Profile Questions', selected: false },
@@ -28,7 +31,7 @@ const CreateBidPlan = () => {
     { label: 'Commercial Proposal', selected: false },
     { label: 'Resource Profiles', selected: false },
     { label: 'MSA', selected: false },
-  ];
+  ], []);
 
   const [clientName, setClientName] = useState('');
   const [opportunityName, setOpportunityName] = useState('');
@@ -46,8 +49,8 @@ const CreateBidPlan = () => {
   useEffect(() => {
     const loadBidData = async () => {
       try {
-        console.log('Loading bid data for bidId:', bidId); // Debug log
-        const savedBidData = await getBidData(bidId); // Fetch bid data
+        console.log('Loading bid data for bidId:', bidId);
+        const savedBidData = await getBidData(bidId);
         if (savedBidData) {
           setClientName(savedBidData.clientName || '');
           setOpportunityName(savedBidData.opportunityName || '');
@@ -65,11 +68,12 @@ const CreateBidPlan = () => {
         }
       } catch (error) {
         console.error('Failed to load bid data:', error);
+        showSnackbar('Failed to load bid data.', 'error');
       }
     };
 
     loadBidData();
-  }, [bidId]);
+  }, [bidId, prepopulatedDeliverables, showSnackbar]);
 
   const validateFields = () => {
     const newErrors = {};
@@ -97,41 +101,40 @@ const CreateBidPlan = () => {
   };
 
   const saveBidWithVersioning = async (bidPayload) => {
-    const bidNameBase = `${clientName.replace(/\s+/g, '_')}_${opportunityName.replace(/\s+/g, '_')}`;
+    const bidNameBase = `${clientName}_${opportunityName}`;
     const existingFiles = await listFiles();
-    
+
     // Extract all existing versions
     const currentVersionNumbers = existingFiles
       .filter((file) => file.id.startsWith(bidNameBase))
-      .map((file) => parseInt(file.id.match(/Version (\d+)/)?.[1], 10) || 0);
-  
-    const newVersion = Math.max(0, ...currentVersionNumbers) + 1; // Increment version
-    const newBidId = `${bidNameBase}_Version ${newVersion}`;
-  
+      .map((file) => parseInt(file.id.match(/Version(\d+)/)?.[1], 10) || 0);
+
+    const newVersion = Math.max(0, ...currentVersionNumbers) + 1;
+    const newBidId = `${bidNameBase}_Version${newVersion}`;
+
     if (currentVersionNumbers.length > 0) {
-      // Fetch the latest existing version
+      // Merge from latest existing version
       const lastVersion = Math.max(...currentVersionNumbers);
-      const previousBidId = `${bidNameBase}_Version ${lastVersion}`;
+      const previousBidId = `${bidNameBase}_Version${lastVersion}`;
       const previousBidData = await getBidData(previousBidId);
-  
-      // Merge data from the previous version excluding timeline and deliverables
+
       bidPayload = {
         ...previousBidData,
         ...bidPayload,
-        timeline: bidPayload.timeline, // Keep new timeline
-        deliverables: bidPayload.deliverables, // Keep new deliverables
-        bidId: newBidId, // Assign the new versioned bidId
+        timeline: bidPayload.timeline, // Explicitly set timeline
+        deliverables: bidPayload.deliverables,
+        bidId: newBidId,
       };
-  
-      // Archive the previous version
+
       await moveToArchive(previousBidId);
     }
-  
-    // Save the new version
+
+    // Note: We are NOT creating the action tracker here anymore.
+
     await saveBidData(bidPayload);
     setBidData(bidPayload);
-  
-    alert(`Bid saved successfully as ${newBidId}`);
+
+    showSnackbar(`Bid saved successfully as ${newBidId}`, 'success');
   };
 
   const handleNavigation = async (path) => {
@@ -144,21 +147,12 @@ const CreateBidPlan = () => {
       deliverables: deliverables.filter((d) => d.selected).map((d) => d.label),
     };
 
-    await saveBidWithVersioning(bidPayload);
-    navigate(path);
-  };
-
-  const handleCancel = async () => {
-    if (window.confirm('Are you sure you want to cancel? This will delete all progress.')) {
-      resetBidData();
-      try {
-        await deleteBidData(bidId);
-        alert('Bid creation canceled.');
-      } catch (error) {
-        console.error('Error canceling bid:', error);
-        alert('Failed to cancel bid: ' + error.message);
-      }
-      navigate('/');
+    try {
+      await saveBidWithVersioning(bidPayload);
+      navigate(path, { state: { bidId: bidData.bidId || 'current_bid' } });
+    } catch (error) {
+      console.error('Error saving bid:', error);
+      showSnackbar('Failed to save bid. Please try again.', 'error');
     }
   };
 
@@ -174,9 +168,9 @@ const CreateBidPlan = () => {
 
           {Object.keys(errors).length > 0 && (
             <Box mb={3}>
-              {Object.entries(errors).map(([key, error]) => (
+              {Object.entries(errors).map(([key, errorMsg]) => (
                 <Typography key={key} variant="body2" color="error">
-                  {error}
+                  {errorMsg}
                 </Typography>
               ))}
             </Box>
@@ -243,6 +237,11 @@ const CreateBidPlan = () => {
                 </Grid>
               ))}
             </Grid>
+            {errors.deliverables && (
+              <Typography variant="body2" color="error">
+                {errors.deliverables}
+              </Typography>
+            )}
           </Box>
 
           <Box mb={3}>
@@ -263,9 +262,6 @@ const CreateBidPlan = () => {
             </Button>
             <Button variant="contained" color="primary" onClick={() => handleNavigation('/flying-formation')} sx={{ mr: 2 }}>
               Next
-            </Button>
-            <Button variant="outlined" color="error" onClick={handleCancel}>
-              Cancel
             </Button>
           </Box>
         </Paper>

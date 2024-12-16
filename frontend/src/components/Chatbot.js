@@ -1,3 +1,5 @@
+// src/components/Chatbot.js
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Box, Typography, TextField, IconButton, Button, Avatar, Chip } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
@@ -8,8 +10,23 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 import MinimizeIcon from '@mui/icons-material/Minimize';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
-import { saveBidData, listFiles, moveToArchive } from '../services/apiService'; 
+import CircularProgress from '@mui/material/CircularProgress'; // For loading indicator
+import { 
+  finalizeBid // Only importing finalizeBid to avoid ESLint warnings
+} from '../services/apiService'; 
 import '../styles/Chatbot.css';
+
+const DEFAULT_ROLES = [
+  'Deal Lead', 
+  'Deal Shaper', 
+  'Deal Coach', 
+  'Deal Capture', 
+  'Deal Negotiator', 
+  'Developer', 
+  'Designer', 
+  'Project Manager', 
+  'Quality Assurance'
+];
 
 const DEFAULT_DELIVERABLES = [
   'Solution PPT', 
@@ -18,18 +35,6 @@ const DEFAULT_DELIVERABLES = [
   'Resource Profiles', 
   'Executive Summary', 
   'Supplier Profile Questions'
-];
-
-const DEFAULT_TEAM_ROLES = [
-  'Deal Lead', 
-  'Deal Shaper', 
-  'Deal Coach', 
-  'Deal Capture', 
-  'Deal Negotiator', 
-  'Developer', 
-  'Designer', 
-  'PM', 
-  'QA'
 ];
 
 const SUGGESTED_ACTIVITIES = {
@@ -62,6 +67,7 @@ const Chatbot = () => {
   const [loading, setLoading] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
 
+  // State variables to manage progression
   const [currentDeliverableIndex, setCurrentDeliverableIndex] = useState(0);
   const [currentActivityIndex, setCurrentActivityIndex] = useState(0);
   const [currentRoleIndex, setCurrentRoleIndex] = useState(0);
@@ -69,6 +75,7 @@ const Chatbot = () => {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
+  // States for multi-select and single-select modes
   const [multiSelectMode, setMultiSelectMode] = useState(false);
   const [singleSelectMode, setSingleSelectMode] = useState(false);
   const [multiSelectOptions, setMultiSelectOptions] = useState([]);
@@ -82,6 +89,7 @@ const Chatbot = () => {
     setMessages((prev) => [...prev, { sender, text, suggestions }]);
   };
 
+  // Helper functions for date validation
   const isValidDate = (date) => !isNaN(new Date(date).getTime());
   const isAfterDate = (date1, date2) => new Date(date1) > new Date(date2);
   const isBetweenDates = (date, start, end) => {
@@ -89,6 +97,7 @@ const Chatbot = () => {
     return d >= new Date(start) && d <= new Date(end);
   };
 
+  // Function to format activities for summary
   const formatActivities = (activities) =>
     Object.entries(activities)
       .map(([deliverable, tasks]) =>
@@ -103,34 +112,41 @@ const Chatbot = () => {
       )
       .join('\n');
 
-  const finalizeBid = async () => {
+  // Function to handle bid finalization
+  const handleFinalizeBid = async () => {
+    setLoading(true);
     try {
-      const bidNameBase = `${bidDetails.clientName}_${bidDetails.opportunityName}`;
-      const existingFiles = await listFiles();
-      const currentVersion = existingFiles
-        .filter((file) => file.id.startsWith(bidNameBase))
-        .map((file) => parseInt(file.id.match(/Version (\d+)/)?.[1], 10) || 0);
-      const newVersion = Math.max(0, ...currentVersion) + 1;
-      const newBidId = `${bidNameBase}_Version ${newVersion}`;
-      const newBidData = { ...bidDetails, bidId: newBidId };
-      if (currentVersion.length > 0) {
-        const lastVersion = Math.max(...currentVersion);
-        const previousBidId = `${bidNameBase}_Version ${lastVersion}`;
-        await moveToArchive(previousBidId);
-      }
-      await saveBidData(newBidData);
-      return { text: `Bid saved successfully as ${newBidId}!\nType "all done done exit" to end this session.` };
+      const response = await finalizeBid(bidDetails);
+      addMessage('bot', response.response);
+
+      // Reset session data after finalizing
+      setContext(null);
+      setBidDetails({
+        clientName: '',
+        opportunityName: '',
+        timeline: { rfpIssueDate: '', qaSubmissionDate: '', proposalSubmissionDate: '' },
+        deliverables: [],
+        activities: {},
+        team: []
+      });
+      setCurrentDeliverableIndex(0);
+      setCurrentActivityIndex(0);
+      setCurrentRoleIndex(0);
+      setSessionEnded(true);
     } catch (error) {
-      console.error('Error saving bid:', error);
-      return { text: 'An error occurred while saving the bid. Please try again.' };
+      console.error('Error finalizing bid:', error);
+      addMessage('bot', 'An error occurred while finalizing the bid. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
+  // Placeholder for edit functionality
   const handleEditRequest = (input) => {
-    // Placeholder for edit logic
     return { text: 'Editing functionality is not implemented in this example.' };
   };
 
+  // Function to send user messages
   const handleSendMessage = async (message) => {
     if (sessionEnded) {
       addMessage('bot', 'The session has ended. Please start a new session if you wish to continue.');
@@ -186,6 +202,7 @@ const Chatbot = () => {
     }
   };
 
+  // Main function to process user inputs based on context
   const processUserInput = async (input) => {
     const lowerInput = input.toLowerCase();
 
@@ -232,6 +249,9 @@ const Chatbot = () => {
         }
 
       case 'opportunity_name':
+        if (input.length < 3) {
+          return { text: 'Opportunity name is too short. Please provide a valid name.' };
+        }
         setBidDetails((prev) => ({ ...prev, opportunityName: input }));
         setContext('rfp_issue_date');
         return { text: 'What is the RFP Issue Date? (Format: YYYY-MM-DD)' };
@@ -266,7 +286,7 @@ const Chatbot = () => {
             ...prev,
             timeline: { ...prev.timeline, proposalSubmissionDate: input },
           }));
-          setContext('deliverables');
+          setContext('deliverables_selection');
           return {
             text: 'Please select your deliverables from the list below. You can select multiple and add your own.',
             multiSelect: true,
@@ -277,138 +297,193 @@ const Chatbot = () => {
           return { text: 'Invalid Proposal Submission Date. Ensure it is after the RFP Issue Date.' };
         }
 
-      case 'deliverables':
+      case 'deliverables_selection':
         {
           const chosenDeliverables = input.split(',').map((d) => d.trim()).filter(Boolean);
           if (chosenDeliverables.length === 0) {
             return { text: 'Please provide at least one deliverable.' };
           } else {
-            // Initialize empty activities arrays for chosen deliverables
-            const newActivities = {};
-            chosenDeliverables.forEach(d => {
-              newActivities[d] = []; // empty; will fill based on user selection later
+            // Initialize activities based on chosen deliverables
+            const activities = {};
+            chosenDeliverables.forEach((d) => {
+              activities[d] = SUGGESTED_ACTIVITIES[d] ? SUGGESTED_ACTIVITIES[d].map((act) => ({
+                name: act,
+                owner: 'Unassigned',
+                status: 'Open',
+                startDate: '',
+                endDate: '',
+                remarks: ''
+              })) : [];
             });
-            setBidDetails((prev) => ({ ...prev, deliverables: chosenDeliverables, activities: newActivities }));
-
-            // Ask for activities for the first deliverable
-            const firstDeliverable = chosenDeliverables[0];
-            setContext(`activities_for_${firstDeliverable}`);
-            const suggestions = SUGGESTED_ACTIVITIES[firstDeliverable] || [];
-            return {
-              text: `Select activities for ${firstDeliverable} (or add your own):`,
+            setBidDetails((prev) => ({ ...prev, deliverables: chosenDeliverables, activities }));
+            setContext('roles_selection');
+            return { 
+              text: `Deliverables set: ${chosenDeliverables.join(', ')}.\nPlease select the roles for your team from the list below or add new roles.`,
               multiSelect: true,
-              multiSelectOptions: suggestions,
+              multiSelectOptions: DEFAULT_ROLES,
               allowCustom: true
             };
           }
         }
 
-      default:
-        if (context && context.startsWith('activities_for_')) {
-          const deliverable = context.replace('activities_for_', '');
-          const chosenActivities = input.split(',').map((a) => a.trim()).filter(Boolean);
-          if (chosenActivities.length === 0) {
-            return { text: 'Please select at least one activity.' };
+      case 'roles_selection':
+        {
+          const chosenRoles = input.split(',').map((r) => r.trim()).filter(Boolean);
+          if (chosenRoles.length === 0) {
+            return { text: 'Please select at least one role.' };
           } else {
-            const currentActivities = bidDetails.activities[deliverable] || [];
-            chosenActivities.forEach((act) => {
-              if (!currentActivities.find((c) => c.name.toLowerCase() === act.toLowerCase())) {
-                currentActivities.push({ name: act, owner: 'Unassigned', status: 'Open', startDate: '', endDate: '', remarks: '' });
-              }
-            });
-            // Update activities for this deliverable
-            setBidDetails((prev) => ({ ...prev, activities: { ...prev.activities, [deliverable]: currentActivities }}));
-
-            const { deliverables } = bidDetails;
-            const currentIndex = deliverables.indexOf(deliverable);
-            const nextIndex = currentIndex + 1;
-            if (nextIndex < deliverables.length) {
-              const nextDeliverable = deliverables[nextIndex];
-              setContext(`activities_for_${nextDeliverable}`);
-              const suggestions = SUGGESTED_ACTIVITIES[nextDeliverable] || [];
-              return {
-                text: `Select activities for ${nextDeliverable} (or add your own):`,
-                multiSelect: true,
-                multiSelectOptions: suggestions,
-                allowCustom: true
-              };
-            } else {
-              // All activities chosen for all deliverables
-              // Now ask for team roles
-              setContext('team');
-              return {
-                text: 'All activities chosen for selected deliverables.\nNow select team roles (you can add custom roles too):',
-                multiSelect: true,
-                multiSelectOptions: DEFAULT_TEAM_ROLES,
-                allowCustom: true
-              };
-            }
-          }
-        }
-
-        if (context === 'team') {
-          const teamRoles = input.split(',').map((r) => r.trim()).filter(Boolean);
-          if (teamRoles.length === 0) {
-            return { text: 'Please select at least one team role.' };
-          } else {
-            const team = teamRoles.map((role) => ({ name: role, person: '' }));
-            setBidDetails((prev) => ({ ...prev, team }));
-            setContext('assign_person_names_for_roles');
+            // Remove duplicates and ensure roles are unique
+            const uniqueRoles = Array.from(new Set(chosenRoles));
+            setBidDetails((prev) => ({ 
+              ...prev, 
+              team: uniqueRoles.map((role) => ({ role, name: '' })) 
+            }));
+            setContext('assign_role_names');
             setCurrentRoleIndex(0);
-            return { text: `What is the person's name for the role '${team[0].name}'?` };
+            return { text: 'Great! Now, please provide the name for the first role.' };
           }
         }
 
-        if (context === 'assign_person_names_for_roles') {
-          const team = bidDetails.team;
-          const role = team[currentRoleIndex].name;
-          if (input.length < 2) {
-            return { text: `Person's name too short. Please provide a valid name for role '${role}'` };
-          }
-          team[currentRoleIndex].person = input;
-          setBidDetails((prev) => ({ ...prev, team }));
-
-          const nextIndex = currentRoleIndex + 1;
-          if (nextIndex < team.length) {
-            setCurrentRoleIndex(nextIndex);
-            return { text: `What is the person's name for the role '${team[nextIndex].name}'?` };
-          } else {
-            // All roles assigned names, now assign owners/dates etc. for chosen activities
+      case 'assign_role_names':
+        {
+          if (currentRoleIndex >= bidDetails.team.length) {
+            setContext('activities_selection');
             setCurrentDeliverableIndex(0);
             setCurrentActivityIndex(0);
-            setContext('assign_activity_owner');
-            const teamPersons = bidDetails.team.map((m) => m.person);
-            const firstDeliverable = bidDetails.deliverables[0];
-            return {
-              text: `Who should be the owner of '${bidDetails.activities[firstDeliverable][0].name}' under '${firstDeliverable}'?`,
-              singleSelect: true,
-              singleSelectOptions: teamPersons
-            };
+            return { text: 'All roles have been assigned. Now, please select activities for each deliverable.' };
+          }
+
+          const currentRole = bidDetails.team[currentRoleIndex].role;
+          const rolePrompt = `Please enter the name for the role: **${currentRole}**.`;
+
+          // Assign the entered name to the current role
+          setBidDetails((prev) => {
+            const updatedTeam = [...prev.team];
+            updatedTeam[currentRoleIndex].name = input;
+            return { ...prev, team: updatedTeam };
+          });
+
+          // Move to the next role
+          setCurrentRoleIndex(prev => prev + 1);
+          const nextRoleIndex = currentRoleIndex + 1;
+
+          if (nextRoleIndex < bidDetails.team.length) {
+            const nextRole = bidDetails.team[nextRoleIndex].role;
+            return { text: `Next role: **${nextRole}**. Please enter the name.` };
+          } else {
+            // All roles assigned, proceed to activities selection
+            setContext('activities_selection');
+            setCurrentDeliverableIndex(0);
+            setCurrentActivityIndex(0);
+            return { text: 'All roles have been assigned. Now, please select activities for each deliverable.' };
           }
         }
 
-        if (context === 'assign_activity_owner') {
-          const d = bidDetails.deliverables[currentDeliverableIndex];
-          const activity = bidDetails.activities[d][currentActivityIndex];
-          const teamPersons = bidDetails.team.map((m) => m.person);
-          const chosenPerson = teamPersons.find((p) => p.toLowerCase() === input.toLowerCase());
-          if (!chosenPerson) {
+      case 'activities_selection':
+        {
+          if (currentDeliverableIndex >= bidDetails.deliverables.length) {
+            setContext('review');
+            const summary = (
+              `Here’s your bid summary:\n` +
+              `**Client:** ${bidDetails.clientName}\n` +
+              `**Opportunity:** ${bidDetails.opportunityName}\n` +
+              `**Timeline:**\n- RFP Issue: ${bidDetails.timeline.rfpIssueDate}\n` +
+              `- QA Submission: ${bidDetails.timeline.qaSubmissionDate}\n` +
+              `- Proposal Submission: ${bidDetails.timeline.proposalSubmissionDate}\n` +
+              `**Deliverables:** ${bidDetails.deliverables.join(', ')}\n` +
+              `**Activities:**\n${formatActivities(bidDetails.activities)}\n` +
+              `**Team:** ${bidDetails.team.map((member) => `${member.name} (${member.role})`).join(', ')}\n\n` +
+              'Type "finalize" to save or "edit <field>" to make changes. Type "all done done exit" to end the session after finalizing.'
+            );
+            return { text: summary };
+          }
+
+          const currentDeliverable = bidDetails.deliverables[currentDeliverableIndex];
+          const deliverableActivities = bidDetails.activities[currentDeliverable];
+
+          // Transition to 'assign_activities' context
+          setContext('assign_activities');
+          return { 
+            text: `For deliverable **${currentDeliverable}**, please select activities. You can select multiple or add new activities.`,
+            multiSelect: true,
+            multiSelectOptions: SUGGESTED_ACTIVITIES[currentDeliverable] || [],
+            allowCustom: true
+          };
+        }
+
+      case 'assign_activities':
+        {
+          const chosenActivities = input.split(',').map((a) => a.trim()).filter(Boolean);
+          if (chosenActivities.length === 0) {
+            return { text: 'Please provide at least one activity.' };
+          } else {
+            const deliverable = bidDetails.deliverables[currentDeliverableIndex];
+            const existingActivities = bidDetails.activities[deliverable].map(act => act.name.toLowerCase());
+            // Replace existing activities with the selected ones
+            const updatedActivities = chosenActivities.map(act => ({
+              name: act,
+              owner: 'Unassigned',
+              status: 'Open',
+              startDate: '',
+              endDate: '',
+              remarks: ''
+            }));
+
+            setBidDetails((prev) => ({
+              ...prev,
+              activities: {
+                ...prev.activities,
+                [deliverable]: updatedActivities // Replacing activities instead of appending
+              }
+            }));
+
+            // Reset activity index for assigning owners
+            setCurrentActivityIndex(0);
+            setContext('assign_activity_owner'); // Transition to owner assignment
+            return { text: `Please assign owners to the activities for **${deliverable}**.` };
+          }
+        }
+
+      case 'assign_activity_owner':
+        {
+          const deliverable = bidDetails.deliverables[currentDeliverableIndex];
+          const activity = bidDetails.activities[deliverable][currentActivityIndex];
+          const teamMembers = bidDetails.team.map((m) => m.name);
+
+          // Transition to 'assign_activity_owner_response' context
+          setContext('assign_activity_owner_response');
+
+          return {
+            text: `Who should be the owner of '${activity.name}' under '${deliverable}'? Please select from the team members.`,
+            singleSelect: true,
+            singleSelectOptions: teamMembers
+          };
+        }
+
+      case 'assign_activity_owner_response':
+        {
+          const chosenOwner = bidDetails.team.find((member) => member.name.toLowerCase() === input.toLowerCase());
+          if (!chosenOwner) {
             return {
-              text: `Please choose a valid owner.`,
+              text: `Please choose a valid owner from the team members.`,
               singleSelect: true,
-              singleSelectOptions: teamPersons
+              singleSelectOptions: bidDetails.team.map((m) => m.name)
             };
           }
 
-          activity.owner = chosenPerson;
+          const deliverable = bidDetails.deliverables[currentDeliverableIndex];
+          const activity = bidDetails.activities[deliverable][currentActivityIndex];
+          activity.owner = chosenOwner.name;
           setBidDetails({ ...bidDetails });
+
           setContext('assign_activity_start_date');
           return { text: `What is the start date for '${activity.name}'? (Format: YYYY-MM-DD)` };
         }
 
-        if (context === 'assign_activity_start_date') {
-          const d = bidDetails.deliverables[currentDeliverableIndex];
-          const activity = bidDetails.activities[d][currentActivityIndex];
+      case 'assign_activity_start_date':
+        {
+          const deliverable = bidDetails.deliverables[currentDeliverableIndex];
+          const activity = bidDetails.activities[deliverable][currentActivityIndex];
           if (!isValidDate(input)) {
             return { text: 'Invalid date format. Please enter start date in YYYY-MM-DD format.' };
           }
@@ -419,13 +494,15 @@ const Chatbot = () => {
 
           activity.startDate = input;
           setBidDetails({ ...bidDetails });
+
           setContext('assign_activity_end_date');
           return { text: `What is the end date for '${activity.name}'? (Format: YYYY-MM-DD)` };
         }
 
-        if (context === 'assign_activity_end_date') {
-          const d = bidDetails.deliverables[currentDeliverableIndex];
-          const activity = bidDetails.activities[d][currentActivityIndex];
+      case 'assign_activity_end_date':
+        {
+          const deliverable = bidDetails.deliverables[currentDeliverableIndex];
+          const activity = bidDetails.activities[deliverable][currentActivityIndex];
           if (!isValidDate(input)) {
             return { text: 'Invalid date format. Please enter end date in YYYY-MM-DD format.' };
           }
@@ -439,6 +516,7 @@ const Chatbot = () => {
 
           activity.endDate = input;
           setBidDetails({ ...bidDetails });
+
           setContext('assign_activity_status');
           return {
             text: `What is the status for '${activity.name}'?`,
@@ -447,9 +525,8 @@ const Chatbot = () => {
           };
         }
 
-        if (context === 'assign_activity_status') {
-          const d = bidDetails.deliverables[currentDeliverableIndex];
-          const activity = bidDetails.activities[d][currentActivityIndex];
+      case 'assign_activity_status':
+        {
           const chosenStatus = STATUS_OPTIONS.find((s) => s.toLowerCase() === input.toLowerCase());
           if (!chosenStatus) {
             return {
@@ -459,66 +536,74 @@ const Chatbot = () => {
             };
           }
 
+          const deliverable = bidDetails.deliverables[currentDeliverableIndex];
+          const activity = bidDetails.activities[deliverable][currentActivityIndex];
           activity.status = chosenStatus;
           setBidDetails({ ...bidDetails });
+
           setContext('assign_activity_remarks');
           return { text: `Any remarks for '${activity.name}'? (Type 'none' if no remarks)` };
         }
 
-        if (context === 'assign_activity_remarks') {
-          const d = bidDetails.deliverables[currentDeliverableIndex];
-          const activity = bidDetails.activities[d][currentActivityIndex];
+      case 'assign_activity_remarks':
+        {
+          const deliverable = bidDetails.deliverables[currentDeliverableIndex];
+          const activity = bidDetails.activities[deliverable][currentActivityIndex];
           activity.remarks = (input.toLowerCase() === 'none') ? '' : input;
           setBidDetails({ ...bidDetails });
 
+          // Move to next activity
           const nextActivityIndex = currentActivityIndex + 1;
-          if (nextActivityIndex < bidDetails.activities[d].length) {
+          const totalActivities = bidDetails.activities[deliverable].length;
+
+          if (nextActivityIndex < totalActivities) {
             setCurrentActivityIndex(nextActivityIndex);
             setContext('assign_activity_owner');
-            const teamPersons = bidDetails.team.map((m) => m.person);
+            const nextActivity = bidDetails.activities[deliverable][nextActivityIndex];
             return {
-              text: `Who should be the owner of '${bidDetails.activities[d][nextActivityIndex].name}' under '${d}'?`,
+              text: `Who should be the owner of '${nextActivity.name}' under '${deliverable}'? Please select from the team members.`,
               singleSelect: true,
-              singleSelectOptions: teamPersons
+              singleSelectOptions: bidDetails.team.map((m) => m.name)
             };
           } else {
-            const deliverablesCount = bidDetails.deliverables.length;
+            // Move to next deliverable
             const nextDeliverableIndex = currentDeliverableIndex + 1;
-            if (nextDeliverableIndex < deliverablesCount) {
+            if (nextDeliverableIndex < bidDetails.deliverables.length) {
               setCurrentDeliverableIndex(nextDeliverableIndex);
               setCurrentActivityIndex(0);
-              setContext('assign_activity_owner');
-              const teamPersons = bidDetails.team.map((m) => m.person);
-              const nd = bidDetails.deliverables[nextDeliverableIndex];
-              return {
-                text: `Who should be the owner of '${bidDetails.activities[nd][0].name}' under '${nd}'?`,
-                singleSelect: true,
-                singleSelectOptions: teamPersons
+              setContext('activities_selection');
+              const nextDeliverable = bidDetails.deliverables[nextDeliverableIndex];
+              return { 
+                text: `For deliverable **${nextDeliverable}**, please select activities. You can select multiple or add new activities.`,
+                multiSelect: true,
+                multiSelectOptions: SUGGESTED_ACTIVITIES[nextDeliverable] || [],
+                allowCustom: true
               };
             } else {
+              // All activities for all deliverables are assigned, proceed to review
               setContext('review');
-              return {
-                text:
-                  `All activities now have owners and details.\n` +
-                  `Here’s your final bid summary:\n` +
-                  `**Client:** ${bidDetails.clientName}\n` +
-                  `**Opportunity:** ${bidDetails.opportunityName}\n` +
-                  `**Timeline:**\n- RFP Issue: ${bidDetails.timeline.rfpIssueDate}\n` +
-                  `- QA Submission: ${bidDetails.timeline.qaSubmissionDate}\n` +
-                  `- Proposal Submission: ${bidDetails.timeline.proposalSubmissionDate}\n` +
-                  `**Deliverables:** ${bidDetails.deliverables.join(', ')}\n` +
-                  `**Activities:**\n${formatActivities(bidDetails.activities)}\n` +
-                  `**Team:** ${bidDetails.team.map((member) => `${member.name} (${member.person})`).join(', ')}\n\n` +
-                  'Type "finalize" to save or "edit" to make changes. Type "all done done exit" to end the session after finalizing.'
-              };
+              const summary = (
+                `Here’s your bid summary:\n` +
+                `**Client:** ${bidDetails.clientName}\n` +
+                `**Opportunity:** ${bidDetails.opportunityName}\n` +
+                `**Timeline:**\n- RFP Issue: ${bidDetails.timeline.rfpIssueDate}\n` +
+                `- QA Submission: ${bidDetails.timeline.qaSubmissionDate}\n` +
+                `- Proposal Submission: ${bidDetails.timeline.proposalSubmissionDate}\n` +
+                `**Deliverables:** ${bidDetails.deliverables.join(', ')}\n` +
+                `**Activities:**\n${formatActivities(bidDetails.activities)}\n` +
+                `**Team:** ${bidDetails.team.map((member) => `${member.name} (${member.role})`).join(', ')}\n\n` +
+                'Type "finalize" to save or "edit <field>" to make changes. Type "all done done exit" to end the session after finalizing.'
+              );
+              return { text: summary };
             }
           }
         }
 
-        if (context === 'review') {
+      case 'review':
+        {
           const lowerInput = input.toLowerCase();
           if (lowerInput === 'finalize') {
-            return await finalizeBid();
+            return await handleFinalizeBid();
           } else if (lowerInput.startsWith('edit')) {
             return handleEditRequest(input);
           } else {
@@ -526,6 +611,7 @@ const Chatbot = () => {
           }
         }
 
+      default:
         return { text: 'I’m sorry, I didn’t quite catch that. Could you clarify?' };
     }
   };
@@ -554,13 +640,6 @@ const Chatbot = () => {
     setOpen(false);
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!loading && !multiSelectMode && !singleSelectMode && !sessionEnded) {
-      handleSendMessage(input);
-    }
-  };
-
   const chatBoxStyles = maximized
     ? {
         position: 'fixed',
@@ -581,7 +660,7 @@ const Chatbot = () => {
         bottom: 20,
         right: 20,
         width: 350,
-        height: 500,
+        height: 600, // Increased height to accommodate role assignments
         bgcolor: 'background.paper',
         boxShadow: 4,
         borderRadius: 2,
@@ -733,7 +812,7 @@ const Chatbot = () => {
                     const finalSelection = selectedOptions.join(', ');
                     handleSendMessage(finalSelection);
                   }}>
-                    Confirm
+                    {loading ? <CircularProgress size={24} color="inherit" /> : 'Confirm'}
                   </Button>
                 </Box>
               )}
@@ -769,7 +848,7 @@ const Chatbot = () => {
                 inputRef={inputRef}
               />
               <Button variant="contained" color="primary" onClick={() => !loading && handleSendMessage(input)} disabled={loading}>
-                <SendIcon />
+                {loading ? <CircularProgress size={24} color="inherit" /> : <SendIcon />}
               </Button>
             </Box>
           )}
