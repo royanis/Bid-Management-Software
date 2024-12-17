@@ -132,9 +132,13 @@ const SummaryPage = () => {
           await createActionTracker(mergedBidData.bidId);
           showSnackbar('Action Tracker created successfully.', 'success');
         } else {
-          // Action tracker exists, create a new version in backend by calling create again
-          await createActionTracker(mergedBidData.bidId);
-          showSnackbar('New version of Action Tracker created successfully.', 'success');
+          // Action tracker exists. Fetch old contents first
+          const oldATData = await getActionTrackerData(mergedBidData.bidId);
+        
+          // Create a new version and ensure old contents are preserved.
+          // Adjust createActionTracker (and possibly backend) to accept oldATData
+          await createActionTracker(mergedBidData.bidId, oldATData);
+          showSnackbar('New version of Action Tracker created successfully with old contents.', 'success');
         }
       } catch (atError) {
         // If 404 or error, try creating a new action tracker

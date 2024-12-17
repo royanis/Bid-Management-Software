@@ -154,26 +154,45 @@ def archive_action_tracker(at_base_id):
 def create_new_action_tracker_version(at_base_id, deliverables):
     # Check existing versions
     files = [f for f in os.listdir(ACTION_TRACKERS_DIR) if f.startswith(at_base_id) and f.endswith('.json')]
+    old_action_tracker_data = None
+
     if files:
         existing_versions = [extract_version(f) for f in files]
-        version = max(existing_versions) + 1
+        old_version = max(existing_versions)
+        old_file = f"{at_base_id}_version{old_version}.json"
+        old_file_path = os.path.join(ACTION_TRACKERS_DIR, old_file)
+
+        # Load old version data before archiving
+        with open(old_file_path, 'r') as old_file:
+            old_action_tracker_data = json.load(old_file)
+
         # Archive old versions
         archive_action_tracker(at_base_id)
+        new_version = old_version + 1
     else:
-        version = 1
+        # No previous versions, start fresh
+        new_version = 1
 
-    new_at_id = f"{at_base_id}_version{version}"
+    new_at_id = f"{at_base_id}_version{new_version}"
     new_at_path = get_action_tracker_file_path(new_at_id)
-    action_tracker_data = {
-        "bidId": at_base_id,  # Using at_base_id as reference. If needed, store actual bidId separately.
-        "totalActions": 0,
-        "openActions": 0,
-        "closedActions": 0,
-        "actionsByDeliverable": {},
-        "owners": [],
-        "deliverables": deliverables,
-        "actionHistory": {}
-    }
+
+    if old_action_tracker_data:
+        # Use old data as a base and update deliverables if needed
+        old_action_tracker_data['deliverables'] = deliverables
+        # old_action_tracker_data is now the template for the new version
+        action_tracker_data = old_action_tracker_data
+    else:
+        # No old data, create a new structure
+        action_tracker_data = {
+            "bidId": at_base_id,  # Using at_base_id as reference. If needed, store actual bidId separately.
+            "totalActions": 0,
+            "openActions": 0,
+            "closedActions": 0,
+            "actionsByDeliverable": {},
+            "owners": [],
+            "deliverables": deliverables,
+            "actionHistory": {}
+        }
 
     with open(new_at_path, 'w') as at_file:
         json.dump(action_tracker_data, at_file, indent=4)
