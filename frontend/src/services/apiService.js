@@ -3,8 +3,8 @@ import axios from 'axios';
 
 // Create an Axios instance with default settings
 const axiosInstance = axios.create({
-  baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000', // Replace with your backend URL
-  //baseURL: 'https://bid-management-software-backend.onrender.com', // Backend server URL (use environment variable if available)
+  //baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000', // Replace with your backend URL
+  baseURL: 'https://bid-management-software-backend.onrender.com', // Backend server URL (use environment variable if available)
   headers: {
     'Content-Type': 'application/json',
   },
