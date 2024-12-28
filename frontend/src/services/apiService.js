@@ -3,8 +3,8 @@ import axios from 'axios';
 
 // Create an Axios instance with default settings
 const axiosInstance = axios.create({
-  //baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000', // Replace with your backend URL
-  baseURL: 'https://bid-management-software-backend.onrender.com', // Backend server URL (use environment variable if available)
+  baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000', // Replace with your backend URL
+  //baseURL: 'https://bid-management-software-backend.onrender.com', // Backend server URL (use environment variable if available)
   headers: {
     'Content-Type': 'application/json',
   },
@@ -437,6 +437,45 @@ const archiveAndCreateNewVersion = async (data) => {
   }
 };
 
+/**
+ * Delete a specific SWOT item.
+ * @param {String} bidId - ID of the bid.
+ * @param {String} swotItemId - ID of the SWOT item to delete.
+ * @returns {String} - Success message.
+ */
+const deleteSwotItem = async (bidId, swotItemId) => {
+  try {
+    const response = await axiosInstance.delete(`/api/bids/${bidId}/swot/${swotItemId}`);
+    if (response.data.success) {
+      return response.data.message;
+    } else {
+      throw new Error(response.data.message);
+    }
+  } catch (error) {
+    handleApiError(error, 'Failed to delete SWOT item.');
+  }
+};
+
+/**
+ * Link a SWOT item to a strategic initiative.
+ * @param {String} bidId - ID of the bid.
+ * @param {String} swotItemId - ID of the SWOT item.
+ * @param {Object} strategyData - Data of the strategic initiative to link.
+ * @returns {Object} - Updated SWOT item with strategy linkage.
+ */
+const linkSwotToStrategy = async (bidId, swotItemId, strategyData) => {
+  try {
+    const response = await axiosInstance.post(`/api/bids/${bidId}/swot/${swotItemId}/strategies`, strategyData);
+    if (response.data.success) {
+      return response.data.data; // Updated SWOT item
+    } else {
+      throw new Error(response.data.message);
+    }
+  } catch (error) {
+    handleApiError(error, 'Failed to link SWOT item to strategy.');
+  }
+};
+
 // -----------------------------
 // Export all functions
 // -----------------------------
@@ -464,7 +503,9 @@ export {
   archiveAndCreateNewVersion,
   listFiles,
   moveToArchive,
-  sendChatbotMessage
+  sendChatbotMessage,
+  deleteSwotItem,
+  linkSwotToStrategy,
 };
 
 // Export the Axios instance as the default export

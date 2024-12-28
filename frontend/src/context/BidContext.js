@@ -1,6 +1,7 @@
 // src/context/BidContext.js
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { Snackbar, Alert } from '@mui/material'; // For user feedback
+import { Snackbar, Alert } from '@mui/material';
 import {
   getBidData,
   saveBidData,
@@ -11,56 +12,82 @@ import {
   updateSingleAction,
   deleteAction,
   createActionTracker,
-} from '../services/apiService'; // Importing necessary API functions
+} from '../services/apiService';
 
-// Create the Bid Context
 const BidContext = createContext();
 
-// Custom hook to use the Bid Context
+/**
+ * Hook to consume the BidContext
+ */
 export const useBidContext = () => useContext(BidContext);
 
-// BidProvider Component
+/**
+ * Provider Component
+ */
 export const BidProvider = ({ children }) => {
-  // State Variables
-  const [bidData, setBidData] = useState(null); // Store bid details
-  const [selectedBidId, setSelectedBidId] = useState('DefaultClient_DefaultOpportunity_Version1'); // Default ID
-  const [currentStep, setCurrentStep] = useState(1); // Track the current step
-  const [loading, setLoading] = useState(false); // Loading state for async operations
-  const [error, setError] = useState(null); // Track errors for UI feedback
+  // Which bid are we looking at?
+  const [selectedBidId, setSelectedBidId] = useState(null);
 
-  // Action Tracker States
-  const [actionTrackerData, setActionTrackerData] = useState(null); // Store Action Tracker details
-  const [actionLoading, setActionLoading] = useState(false); // Loading state for Action Tracker operations
-  const [actionError, setActionError] = useState(null); // Track errors related to Action Tracker
+  // The main data object for the selected bid
+  const [bidData, setBidData] = useState(null);
 
-  // Snackbar for user feedback
+  // Additional states: step tracking, loading, etc.
+  const [currentStep, setCurrentStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Action Tracker data
+  const [actionTrackerData, setActionTrackerData] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState(null);
+
+  // Snackbar
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
-    severity: 'success', // 'success', 'error', 'warning', 'info'
+    severity: 'success',
   });
 
+  // Helper to show snackbar
   const showSnackbar = useCallback((message, severity = 'success') => {
     setSnackbar({ open: true, message, severity });
   }, []);
 
-  const handleCloseSnackbar = useCallback(() => {
+  // Helper to close snackbar
+  const handleCloseSnackbar = useCallback((_, reason) => {
+    if (reason === 'clickaway') return;
     setSnackbar((prev) => ({ ...prev, open: false }));
   }, []);
 
-  // Load initial bid data when selectedBidId changes
+  /**
+   * 1) On mount or whenever 'selectedBidId' changes, fetch the data from the backend
+   */
   useEffect(() => {
+    if (!selectedBidId) return; // Exit if no bid is selected
+
     const loadInitialBidData = async () => {
       setLoading(true);
       setError(null);
       try {
-        const data = await getBidData(selectedBidId); // Fetch data from backend
+        const data = await getBidData(selectedBidId);
         if (data) {
+          // Ensure we have the swot structure
+          if (!data.workshop) data.workshop = {};
+          if (!data.workshop.swot) {
+            data.workshop.swot = {
+              strengths: [],
+              weaknesses: [],
+              opportunities: [],
+              threats: [],
+            };
+          }
           setBidData(data);
-          setCurrentStep(2); // Example: Set step 2 if data exists
+          setCurrentStep(2);
+          console.log('[BidContext] Loaded bid data:', data);
         } else {
-          console.warn('No data found for selected bid:', selectedBidId);
-          setCurrentStep(1); // If no data, reset to initial step
+          // If no data found
+          console.warn('[BidContext] No data found for:', selectedBidId);
+          showSnackbar(`No data found for ${selectedBidId}. Please create a new bid.`, 'info');
         }
       } catch (err) {
         console.error('Error loading bid data:', err);
@@ -74,97 +101,81 @@ export const BidProvider = ({ children }) => {
     loadInitialBidData();
   }, [selectedBidId, showSnackbar]);
 
-  // Save bid data whenever it changes
+  /**
+   * 2) Whenever bidData changes, automatically call saveBidData to persist it
+   */
   useEffect(() => {
+    if (!bidData || !bidData.bidId) return; // Ensure bidId exists
+
     const saveData = async () => {
-      if (bidData && Object.keys(bidData).length > 0) {
-        setError(null);
-        try {
-          await saveBidData(bidData); // Save updated data to backend
-          console.log('Bid data saved successfully:', bidData);
-          showSnackbar('Bid data saved successfully.', 'success');
-        } catch (err) {
-          console.error('Error saving bid data:', err);
-          setError('Failed to save bid data. Please try again.');
-          showSnackbar('Failed to save bid data. Please try again.', 'error');
-        }
+      try {
+        console.log('[BidContext] Saving bidData =>', bidData);
+        await saveBidData(bidData);
+        console.log('[BidContext] Saved data successfully:', bidData);
+        showSnackbar('Bid data saved successfully.', 'success');
+      } catch (err) {
+        console.error('Error saving bid data:', err);
+        setError('Failed to save bid data. Please try again.');
+        showSnackbar('Failed to save bid data. Please try again.', 'error');
       }
     };
 
     saveData();
   }, [bidData, showSnackbar]);
 
-  // Load Action Tracker data when bidData is loaded
+  /**
+   * 3) Once bidData is loaded, also load (or create) the Action Tracker for it
+   */
   useEffect(() => {
     const loadActionTracker = async () => {
-      if (bidData) {
-        setActionLoading(true);
-        setActionError(null);
-        try {
-          const data = await getActionTrackerData(selectedBidId);
-          if (data) {
-            setActionTrackerData(data);
-          } else {
-            // If no Action Tracker exists, initialize one
-            const newTracker = await createActionTracker(selectedBidId);
-            setActionTrackerData(newTracker);
-            showSnackbar('Initialized new Action Tracker.', 'info');
-            console.log('Initialized new Action Tracker.');
-          }
-        } catch (err) {
-          console.error('Error loading Action Tracker data:', err);
-          setActionError('Failed to load Action Tracker data.');
-          showSnackbar('Failed to load Action Tracker data.', 'error');
-        } finally {
-          setActionLoading(false);
+      if (!bidData) return;
+      setActionLoading(true);
+      setActionError(null);
+      try {
+        const tracker = await getActionTrackerData(selectedBidId);
+        if (tracker) {
+          setActionTrackerData(tracker);
+        } else {
+          // If not found, create a new one
+          const newTracker = await createActionTracker(selectedBidId);
+          setActionTrackerData(newTracker);
+          showSnackbar('Initialized new Action Tracker.', 'info');
+          console.log('[BidContext] Created new Action Tracker for', selectedBidId);
         }
+      } catch (err) {
+        console.error('Error loading Action Tracker:', err);
+        setActionError('Failed to load Action Tracker.');
+        showSnackbar('Failed to load Action Tracker data.', 'error');
+      } finally {
+        setActionLoading(false);
       }
     };
-
     loadActionTracker();
   }, [bidData, selectedBidId, showSnackbar]);
 
-  const loadBidData = useCallback(async (bidId) => {
-    setLoading(true);
-    setError(null);
-    try {
-      if (!bidId.match(/^[\w]+_[\w]+_Version\d+$/)) {
-        throw new Error('Invalid bid ID format. Expected format: ClientName_OpportunityName_VersionXX');
-      }
+  /**
+   * 4) A helper to load a different bid by ID
+   */
+  const loadBidDataById = useCallback((bidId) => {
+    setSelectedBidId(bidId);
+  }, []);
 
-      const data = await getBidData(bidId);
-      if (data) {
-        setBidData(data);
-        setSelectedBidId(bidId); // Update the selected bid ID
-        setCurrentStep(2); // Set appropriate step if data exists
-      } else {
-        console.warn('No data found for bidId:', bidId);
-        setBidData(null);
-        setSelectedBidId(bidId);
-        setCurrentStep(1);
-      }
-    } catch (err) {
-      console.error('Error loading bid data:', err);
-      setError(err.message || 'Failed to load bid data. Please try again.');
-      showSnackbar(err.message || 'Failed to load bid data. Please try again.', 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [showSnackbar]);
-
+  /**
+   * 5) If user wants to reset (delete) the current bid data from the backend
+   */
   const resetBidData = useCallback(async () => {
-    const currentYear = new Date().getFullYear();
-    const defaultId = `DefaultClient_DefaultOpportunity_Version${currentYear}`;
+    if (!selectedBidId) {
+      showSnackbar('No bid selected to reset.', 'warning');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      await deleteBidData(selectedBidId); // Delete data from backend
-      setBidData(null);
-      setSelectedBidId(defaultId); // Set a new default ID
-      setCurrentStep(1); // Reset the current step to the first step
-      setActionTrackerData(null); // Reset Action Tracker data
+      await deleteBidData(selectedBidId);
+      setBidData(null); // Reset bid data
+      setActionTrackerData(null);
+      setCurrentStep(1);
       showSnackbar('Bid data reset successfully.', 'success');
-      console.log('Bid data reset successfully.');
     } catch (err) {
       console.error('Error resetting bid data:', err);
       setError('Failed to reset bid data. Please try again.');
@@ -174,40 +185,47 @@ export const BidProvider = ({ children }) => {
     }
   }, [selectedBidId, showSnackbar]);
 
-  const updateBidData = useCallback((updates) => {
-    setBidData((prevData) => ({
-      ...prevData,
-      ...updates,
-      team: {
-        core: updates.team?.core || prevData?.team?.core || [],
-        solution: updates.team?.solution || prevData?.team?.solution || [],
-      },
-      activities: updates.activities || prevData.activities || {},
-    }));
-    console.log('Bid data updated:', updates);
-    showSnackbar('Bid data updated successfully.', 'success');
-  }, [showSnackbar]);
+  /**
+   * 6) The main function we call to update the bidData in partial form
+   *    We'll shallow-merge your partial data into the existing `bidData`.
+   *    e.g. updateBidData({ workshop: { swot: {...} } })
+   */
+  const updateBidData = useCallback((partialData) => {
+    setBidData((prevData) => {
+      if (!prevData) return prevData;
+      // Shallow merge
+      const merged = {
+        ...prevData,
+        ...partialData, // merges top-level fields like bidId
+        workshop: {
+          // merge the sub-object workshop
+          ...prevData.workshop,
+          ...(partialData.workshop || {}),
+        },
+      };
+      return merged;
+    });
+  }, []);
+
+  /**
+   * Additional helpers for updating an activity, or Action Tracker actions
+   * (Add, update, delete actions, etc.)
+   */
 
   const updateActivityInContext = useCallback(async (deliverable, updatedActivity) => {
     try {
       await updateActivity(selectedBidId, deliverable, updatedActivity);
-
       setBidData((prevData) => {
+        if (!prevData || !prevData.activities) return prevData;
         const updatedActivities = { ...prevData.activities };
-
         if (updatedActivities[deliverable]) {
-          updatedActivities[deliverable] = updatedActivities[deliverable].map((activity) =>
-            activity.name === updatedActivity.name ? { ...activity, ...updatedActivity } : activity
+          updatedActivities[deliverable] = updatedActivities[deliverable].map((act) =>
+            act.name === updatedActivity.name ? { ...act, ...updatedActivity } : act
           );
         }
-
-        return {
-          ...prevData,
-          activities: updatedActivities,
-        };
+        return { ...prevData, activities: updatedActivities };
       });
-
-      console.log('Activity updated successfully in context:', updatedActivity);
+      console.log('[BidContext] Updated activity in context:', updatedActivity);
       showSnackbar('Activity updated successfully.', 'success');
     } catch (err) {
       console.error('Error updating activity in context:', err);
@@ -216,12 +234,14 @@ export const BidProvider = ({ children }) => {
     }
   }, [selectedBidId, showSnackbar]);
 
-  const addNewActionHandler = useCallback(async (actionData) => {
+  // Example: add new action to Action Tracker
+  const addNewAction = useCallback(async (actionData) => {
     setActionLoading(true);
     setActionError(null);
     try {
       const response = await addAction(selectedBidId, actionData);
       if (response.success) {
+        // Refresh
         const updatedTracker = await getActionTrackerData(selectedBidId);
         setActionTrackerData(updatedTracker);
         showSnackbar('Action added successfully!', 'success');
@@ -237,7 +257,8 @@ export const BidProvider = ({ children }) => {
     }
   }, [selectedBidId, showSnackbar]);
 
-  const updateExistingActionHandler = useCallback(async (actionId, updatedData) => {
+  // Example: update existing action
+  const updateExistingAction = useCallback(async (actionId, updatedData) => {
     setActionLoading(true);
     setActionError(null);
     try {
@@ -258,7 +279,8 @@ export const BidProvider = ({ children }) => {
     }
   }, [selectedBidId, showSnackbar]);
 
-  const deleteExistingActionHandler = useCallback(async (actionId) => {
+  // Example: delete an action
+  const deleteExistingAction = useCallback(async (actionId) => {
     setActionLoading(true);
     setActionError(null);
     try {
@@ -279,34 +301,43 @@ export const BidProvider = ({ children }) => {
     }
   }, [selectedBidId, showSnackbar]);
 
+  /**
+   * Return our context
+   */
   return (
     <BidContext.Provider
       value={{
+        // Data
         bidData,
         setBidData,
         selectedBidId,
         setSelectedBidId,
         currentStep,
         setCurrentStep,
-        loadBidData,
-        resetBidData,
-        updateBidData,
-        updateActivityInContext,
+        // Loading/errors
         loading,
         error,
         actionTrackerData,
-        setActionTrackerData,
         actionLoading,
         actionError,
-        addNewAction: addNewActionHandler,
-        updateExistingAction: updateExistingActionHandler,
-        deleteExistingAction: deleteExistingActionHandler,
+
+        // Key methods
+        loadBidData: loadBidDataById,
+        resetBidData,
+        updateBidData,          // <-- The new 'partial object' method
+        updateActivityInContext,
+
+        // Action tracker functions
+        addNewAction,
+        updateExistingAction,
+        deleteExistingAction,
+
+        // Snackbar
         showSnackbar,
         handleCloseSnackbar,
       }}
     >
       {children}
-      {/* Snackbar Component for User Feedback */}
       <Snackbar
         open={snackbar.open}
         autoHideDuration={6000}

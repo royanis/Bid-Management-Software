@@ -1,7 +1,7 @@
 // src/components/Chatbot.js
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Box, Typography, TextField, IconButton, Button, Avatar, Chip } from '@mui/material';
+import { Box, Typography, TextField, IconButton, Button, Avatar, Chip, Snackbar, Alert } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import CloseIcon from '@mui/icons-material/Close';
@@ -11,9 +11,7 @@ import MinimizeIcon from '@mui/icons-material/Minimize';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import CircularProgress from '@mui/material/CircularProgress'; // For loading indicator
-import { 
-  finalizeBid // Only importing finalizeBid to avoid ESLint warnings
-} from '../services/apiService'; 
+import { finalizeBid } from '../services/apiService'; // Ensure this function returns response.data
 import '../styles/Chatbot.css';
 
 const DEFAULT_ROLES = [
@@ -83,6 +81,9 @@ const Chatbot = () => {
   const [allowCustomAddition, setAllowCustomAddition] = useState(false);
   const [customItem, setCustomItem] = useState('');
 
+  // Snackbar State for Feedback
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+
   const toggleChat = () => setOpen((prev) => !prev);
 
   const addMessage = (sender, text, suggestions = []) => {
@@ -117,25 +118,11 @@ const Chatbot = () => {
     setLoading(true);
     try {
       const response = await finalizeBid(bidDetails);
-      addMessage('bot', response.response);
-
-      // Reset session data after finalizing
-      setContext(null);
-      setBidDetails({
-        clientName: '',
-        opportunityName: '',
-        timeline: { rfpIssueDate: '', qaSubmissionDate: '', proposalSubmissionDate: '' },
-        deliverables: [],
-        activities: {},
-        team: []
-      });
-      setCurrentDeliverableIndex(0);
-      setCurrentActivityIndex(0);
-      setCurrentRoleIndex(0);
-      setSessionEnded(true);
+      console.log('Finalize Bid Response:', response); // Debugging line
+      return { text: response.message }; // Changed from adding message directly
     } catch (error) {
       console.error('Error finalizing bid:', error);
-      addMessage('bot', 'An error occurred while finalizing the bid. Please try again.');
+      return { text: 'An error occurred while finalizing the bid. Please try again.' };
     } finally {
       setLoading(false);
     }
@@ -348,9 +335,19 @@ const Chatbot = () => {
         {
           if (currentRoleIndex >= bidDetails.team.length) {
             setContext('activities_selection');
-            setCurrentDeliverableIndex(0);
-            setCurrentActivityIndex(0);
-            return { text: 'All roles have been assigned. Now, please select activities for each deliverable.' };
+            const summary = (
+              `Here’s your bid summary:\n` +
+              `**Client:** ${bidDetails.clientName}\n` +
+              `**Opportunity:** ${bidDetails.opportunityName}\n` +
+              `**Timeline:**\n- RFP Issue: ${bidDetails.timeline.rfpIssueDate}\n` +
+              `- QA Submission: ${bidDetails.timeline.qaSubmissionDate}\n` +
+              `- Proposal Submission: ${bidDetails.timeline.proposalSubmissionDate}\n` +
+              `**Deliverables:** ${bidDetails.deliverables.join(', ')}\n` +
+              `**Activities:**\n${formatActivities(bidDetails.activities)}\n` +
+              `**Team:** ${bidDetails.team.map((member) => `${member.name} (${member.role})`).join(', ')}\n\n` +
+              'Type "finalize" to save or "edit <field>" to make changes. Type "all done done exit" to end the session after finalizing.'
+            );
+            return { text: summary };
           }
 
           const currentRole = bidDetails.team[currentRoleIndex].role;
@@ -603,7 +600,8 @@ const Chatbot = () => {
         {
           const lowerInput = input.toLowerCase();
           if (lowerInput === 'finalize') {
-            return await handleFinalizeBid();
+            const finalizeResponse = await handleFinalizeBid();
+            return finalizeResponse; // { text: 'Bid saved successfully...' } or error message
           } else if (lowerInput.startsWith('edit')) {
             return handleEditRequest(input);
           } else {
@@ -685,6 +683,7 @@ const Chatbot = () => {
             zIndex: 1300,
             boxShadow: 3,
           }}
+          aria-label="Open Chatbot"
         >
           <ChatBubbleOutlineIcon />
         </IconButton>
@@ -697,13 +696,13 @@ const Chatbot = () => {
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold', flexGrow: 1 }}>
               Bid Assistant
             </Typography>
-            <IconButton onClick={handleMinimize} sx={{ color: 'white' }}>
+            <IconButton onClick={handleMinimize} sx={{ color: 'white' }} aria-label="Minimize Chatbot">
               <MinimizeIcon />
             </IconButton>
-            <IconButton onClick={handleMaximize} sx={{ color: 'white' }}>
+            <IconButton onClick={handleMaximize} sx={{ color: 'white' }} aria-label="Toggle Fullscreen">
               {maximized ? <FullscreenExitIcon /> : <FullscreenIcon />}
             </IconButton>
-            <IconButton onClick={handleCloseWindow} sx={{ color: 'white' }}>
+            <IconButton onClick={handleCloseWindow} sx={{ color: 'white' }} aria-label="Close Chatbot">
               <CloseIcon />
             </IconButton>
           </Box>
@@ -790,6 +789,7 @@ const Chatbot = () => {
                     placeholder="Add custom item..."
                     value={customItem}
                     onChange={(e) => setCustomItem(e.target.value)}
+                    aria-label="Add custom item"
                   />
                   <Button variant="contained" onClick={() => {
                     if (customItem.trim() !== '' && !multiSelectOptions.includes(customItem.trim())) {
@@ -797,7 +797,7 @@ const Chatbot = () => {
                       setSelectedOptions((prev) => [...prev, customItem.trim()]);
                       setCustomItem('');
                     }
-                  }}>
+                  }} aria-label="Add custom item">
                     Add
                   </Button>
                 </Box>
@@ -811,7 +811,7 @@ const Chatbot = () => {
                     }
                     const finalSelection = selectedOptions.join(', ');
                     handleSendMessage(finalSelection);
-                  }}>
+                  }} aria-label="Confirm Selection">
                     {loading ? <CircularProgress size={24} color="inherit" /> : 'Confirm'}
                   </Button>
                 </Box>
@@ -846,14 +846,27 @@ const Chatbot = () => {
                 }}
                 disabled={loading}
                 inputRef={inputRef}
+                aria-label="Chat input"
               />
-              <Button variant="contained" color="primary" onClick={() => !loading && handleSendMessage(input)} disabled={loading}>
+              <Button variant="contained" color="primary" onClick={() => !loading && handleSendMessage(input)} disabled={loading} aria-label="Send Message">
                 {loading ? <CircularProgress size={24} color="inherit" /> : <SendIcon />}
               </Button>
             </Box>
           )}
         </Box>
       )}
+
+      {/* Snackbar for User Feedback */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setSnackbar({ ...snackbar, open: false })} severity={snackbar.severity} sx={{ width: '100%' }}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </>
   );
 };
