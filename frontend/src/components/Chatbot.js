@@ -327,7 +327,7 @@ const Chatbot = () => {
             }));
             setContext('assign_role_names');
             setCurrentRoleIndex(0);
-            return { text: 'Great! Now, please provide the name for the first role.' };
+            return { text: 'Great! Now, please provide the assignee name for the first role.' };
           }
         }
 
@@ -372,7 +372,7 @@ const Chatbot = () => {
             setContext('activities_selection');
             setCurrentDeliverableIndex(0);
             setCurrentActivityIndex(0);
-            return { text: 'All roles have been assigned. Now, please select activities for each deliverable.' };
+            //return { text: 'All roles have been assigned. Now, please select activities for each deliverable in the next prompt.' };
           }
         }
 
@@ -437,7 +437,7 @@ const Chatbot = () => {
             // Reset activity index for assigning owners
             setCurrentActivityIndex(0);
             setContext('assign_activity_owner'); // Transition to owner assignment
-            return { text: `Please assign owners to the activities for **${deliverable}**.` };
+            //return { text: `Please assign owners to the activities for **${deliverable}** in the next prompt.` };
           }
         }
 
