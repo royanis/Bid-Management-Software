@@ -119,18 +119,18 @@ const Chatbot = () => {
     try {
       const response = await finalizeBid(bidDetails);
       console.log('Finalize Bid Response:', response); // Debugging line
-      return { text: response.message }; // Changed from adding message directly
+      
+      // Assuming response.message contains a success message
+      // We'll append the options for the user
+      const confirmationMessage = `${response.message}\n\nType "create new bid" to start a new bid or "exit" to end the session.`;
+      
+      return { text: confirmationMessage };
     } catch (error) {
       console.error('Error finalizing bid:', error);
       return { text: 'An error occurred while finalizing the bid. Please try again.' };
     } finally {
       setLoading(false);
     }
-  };
-
-  // Placeholder for edit functionality
-  const handleEditRequest = (input) => {
-    return { text: 'Editing functionality is not implemented in this example.' };
   };
 
   // Function to send user messages
@@ -345,7 +345,7 @@ const Chatbot = () => {
               `**Deliverables:** ${bidDetails.deliverables.join(', ')}\n` +
               `**Activities:**\n${formatActivities(bidDetails.activities)}\n` +
               `**Team:** ${bidDetails.team.map((member) => `${member.name} (${member.role})`).join(', ')}\n\n` +
-              'Type "finalize" to save or "edit <field>" to make changes. Type "all done done exit" to end the session after finalizing.'
+              'Type "finalize" to save, "create new bid" to start a new bid, or "exit" to end the session.'
             );
             return { text: summary };
           }
@@ -366,7 +366,7 @@ const Chatbot = () => {
 
           if (nextRoleIndex < bidDetails.team.length) {
             const nextRole = bidDetails.team[nextRoleIndex].role;
-            return { text: `Next role: **${nextRole}**. Please enter the name.` };
+            return { text: `Please enter the name for the role: **${nextRole}**.` };
           } else {
             // All roles assigned, proceed to activities selection
             setContext('activities_selection');
@@ -390,7 +390,7 @@ const Chatbot = () => {
               `**Deliverables:** ${bidDetails.deliverables.join(', ')}\n` +
               `**Activities:**\n${formatActivities(bidDetails.activities)}\n` +
               `**Team:** ${bidDetails.team.map((member) => `${member.name} (${member.role})`).join(', ')}\n\n` +
-              'Type "finalize" to save or "edit <field>" to make changes. Type "all done done exit" to end the session after finalizing.'
+              'Type "finalize" to save, "create new bid" to start a new bid, or "exit" to end the session.'
             );
             return { text: summary };
           }
@@ -589,7 +589,7 @@ const Chatbot = () => {
                 `**Deliverables:** ${bidDetails.deliverables.join(', ')}\n` +
                 `**Activities:**\n${formatActivities(bidDetails.activities)}\n` +
                 `**Team:** ${bidDetails.team.map((member) => `${member.name} (${member.role})`).join(', ')}\n\n` +
-                'Type "finalize" to save or "edit <field>" to make changes. Type "all done done exit" to end the session after finalizing.'
+                'Type "finalize" to save, "create new bid" to start a new bid, or "exit" to end the session.'
               );
               return { text: summary };
             }
@@ -602,10 +602,27 @@ const Chatbot = () => {
           if (lowerInput === 'finalize') {
             const finalizeResponse = await handleFinalizeBid();
             return finalizeResponse; // { text: 'Bid saved successfully...' } or error message
-          } else if (lowerInput.startsWith('edit')) {
-            return handleEditRequest(input);
+          } else if (lowerInput === 'create new bid') {
+            // Reset bid details and context to start a new bid
+            setBidDetails({
+              clientName: '',
+              opportunityName: '',
+              timeline: { rfpIssueDate: '', qaSubmissionDate: '', proposalSubmissionDate: '' },
+              deliverables: [],
+              activities: {}, 
+              team: []
+            });
+            setContext('client_name');
+            setCurrentDeliverableIndex(0);
+            setCurrentActivityIndex(0);
+            setCurrentRoleIndex(0);
+            return { text: 'Great! Let’s start with the client name. What is the client name?' };
+          } else if (lowerInput === 'exit') {
+            // End the session
+            setSessionEnded(true);
+            return { text: 'Session ended. Please refresh the page for the change to take effect. Have a great day!', endSession: true };
           } else {
-            return { text: 'Type "finalize" to save or "edit <field>" to make changes.' };
+            return { text: 'Please type "finalize" to save, "create new bid" to start a new bid, or "exit" to end the session.' };
           }
         }
 
